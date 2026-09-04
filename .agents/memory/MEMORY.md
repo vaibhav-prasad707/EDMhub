@@ -1,0 +1,1 @@
+- [Generated validation uses Zod 4](generated-validation-zod.md) — keep the workspace Zod catalog on Zod 4 for current Orval output.

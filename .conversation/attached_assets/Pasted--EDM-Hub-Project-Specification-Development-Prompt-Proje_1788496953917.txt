@@ -1,0 +1,530 @@
+# EDM Hub - Project Specification & Development Prompt
+
+## Project Overview
+EDM Hub is a full-stack web application dedicated to Electronic Dance Music (EDM) enthusiasts. It combines artist discovery, personalized recommendations, an interactive song guessing game, and a customizable user dashboard to create an engaging platform for EDM lovers.
+
+**Target User**: EDM fans of all levels who want to discover new artists, test their music knowledge, and track their musical preferences.
+
+---
+
+## Core Features
+
+### Feature 1: Artist Discovery & Recommendations
+**Purpose**: Help users discover new EDM artists based on their preferred genres.
+
+**Requirements**:
+- Display a catalog of EDM artists organized by subgenres (House, Techno, Trance, Drum & Bass, Dubstep, Hardstyle, Future Bass, Garage, Psytrance, Ambient, etc.)
+- User can select/deselect favorite genres to create a preference profile
+- Recommendation algorithm suggests 5-10 similar artists based on:
+  - Genre overlap (users who like House also like Tech House)
+  - Energy level/tempo matching
+  - Collaborative connections (artists who've worked together)
+  - Community tags or mood classification
+- Display artist cards with:
+  - Artist name, image/avatar, bio
+  - Top tracks (3-5 most popular songs)
+  - Genres they produce
+  - Follower count (if using external data)
+  - Link to external profiles (Spotify, SoundCloud, etc.)
+- Save/favorite artists for later reference
+
+### Feature 2: Song Guessing Game
+**Purpose**: Interactive game to test user knowledge of EDM tracks.
+
+**Requirements**:
+- Game flow:
+  1. User starts a game session and selects difficulty (Easy/Medium/Hard)
+  2. 1-second audio clip plays from a random EDM track
+  3. User has 4-8 multiple-choice options (song name + artist)
+  4. Optional hints: Genre, Release year, Artist name only
+  5. Immediate feedback: correct/incorrect with explanation
+  6. Next round automatically loads (or user can skip)
+  
+- Scoring System:
+  - Correct answer = base points (10 pts)
+  - Speed bonus: answer within 5 seconds = +5 pts
+  - No hints used = +5 pts
+  - Difficulty multiplier: Hard = 1.5x, Medium = 1x, Easy = 0.75x
+  - Streak bonus: consecutive correct answers = +1 pt per streak
+  
+- Leaderboards:
+  - Daily, Weekly, All-time rankings
+  - Display top 10 players with score, accuracy %, avg response time
+  - User's current rank & progress bar to next rank
+  
+- Session tracking:
+  - Track accuracy percentage
+  - Average response time
+  - Most frequently guessed correctly/incorrectly
+  - Session history (date, score, accuracy, duration)
+
+- Game customization:
+  - Filter by specific genres
+  - Filter by era (2000s, 2010s, 2020s, Current)
+  - Select number of rounds (5/10/20)
+
+### Feature 3: Personalized EDM Dashboard
+**Purpose**: Central hub where users view their music profile, stats, and saved content.
+
+**Requirements**:
+- User Profile Section:
+  - Profile picture, username, bio
+  - Member since date
+  - Total games played, overall accuracy %
+  - Favorite genre breakdown (pie chart)
+  - Total points earned
+  
+- Statistics Panel:
+  - "Artist of the Week" (most guessed artist)
+  - "Favorite Subgenre" (most correct answers)
+  - "Hottest Track" (most played/guessed track)
+  - Streaks: current winning streak, best streak
+  - Accuracy trend (last 7 days / last 30 days)
+  
+- Saved Content:
+  - Favorite Artists list (sorted by date added)
+  - Recommended Artists queue (generated from preferences)
+  - Bookmarked Tracks (songs they loved from the guessing game)
+  
+- Playlist Builder:
+  - Create custom playlists by dragging recommended tracks
+  - Name and describe playlists
+  - Share playlist links (optional social feature)
+  - Export playlist to Spotify (if using Spotify API)
+  
+- Recent Activity Feed:
+  - Last 5 games played (score, accuracy, date)
+  - Recently discovered artists
+  - Achievement notifications (badge unlocks)
+
+**Achievement/Badge System** (Adaptive to Performance):
+- Design achievements that unlock based on user performance
+- Examples:
+  - "First Steps": Play your first game
+  - "Century Club": Score 100+ points in a single session
+  - "Perfect Game": Get 5/5 correct in a game
+  - "Speed Demon": Answer all questions in under 3 seconds average
+  - "Genre Master [House/Techno/etc]": Get 10 correct answers in single genre
+  - "Streak King": Achieve 10+ game winning streak
+  - "Night Owl": Play 5+ games after midnight
+  - "Accuracy Addict": Maintain 80%+ accuracy over 10 games
+  - "Leaderboard Climber": Reach top 50 on leaderboard
+  - "Dedicated Fan": Play 30 games total
+- Display achievement progress (e.g., "4/5 correct" for Perfect Game)
+- Show unlock date & time for completed achievements
+- Achievements visible on public profile (Phase 2: social sharing)
+
+---
+
+## Technical Architecture
+
+### Frontend
+- **Framework**: React 18+ or Vue 3
+- **Styling**: Tailwind CSS with dark theme configuration + custom CSS for advanced animations
+- **State Management**: Redux Toolkit or Zustand
+- **Animation Libraries**:
+  - Framer Motion (React) OR Vue Motion (Vue) — for component animations, transitions, micro-interactions
+  - React Spring or Tailwind Animate — for physics-based animations (bounces, springs)
+  - Lottie Web — for complex badge unlock animations (optional)
+- **Audio Visualization**: Tone.js or Web Audio API for waveform visualization during game
+- **UI Component Library**: Build custom components inspired by Spotify (or use Shadcn UI with heavy customization)
+- **Icons**: Heroicons or Lucide icons, styled with custom colors
+- **Charts**: Recharts or Chart.js for dashboard stats (accuracy trends, genre breakdown)
+
+- **Components**:
+  - ArtistCard (image with overlay on hover, favorite toggle, smooth scale animation)
+  - GameInterface (large audio player, waveform, options with stagger-in, score pop-ups)
+  - LeaderboardTable (rank badges, animated counters, highlight on user's rank)
+  - DashboardStats (animated number counters, mini charts, achievement progress bars)
+  - PlaylistBuilder (drag-and-drop, smooth reordering animations)
+  - Navigation (sidebar/bottom nav Spotify-style with active state indicator)
+  
+- **Audio Playback**: Howler.js (with waveform visualization) or native Web Audio API
+- **Responsive Design**: Mobile-first, CSS Grid + Flexbox for layouts
+- **CSS Approach**: Utility-first (Tailwind) + CSS modules for component-specific animations
+
+### Backend
+- **Runtime**: Node.js (Express) or Python (FastAPI)
+- **Database**: PostgreSQL (relational data) + Redis (caching, leaderboards, sessions)
+- **Authentication**: JWT tokens, OAuth2 optional (for Spotify integration)
+- **APIs to Integrate**:
+  - Spotify API (for track data, audio previews, artist info)
+  - Last.fm API (similar artists, genre tags)
+  
+- **Core Endpoints**:
+  ```
+  GET /api/artists?genre=house → List artists by genre
+  GET /api/artists/:id → Artist details + top tracks
+  POST /api/recommendations → Get recommended artists (body: genres[])
+  
+  GET /api/game/start → Initiate game session
+  POST /api/game/answer → Submit answer (body: gameId, trackId, answerTime)
+  GET /api/game/leaderboard?period=weekly → Leaderboard data
+  
+  GET /api/user/profile → User profile & stats
+  POST /api/user/favorites/artists → Save favorite artist
+  GET /api/user/dashboard → Dashboard aggregated data
+  
+  POST /api/playlist → Create playlist
+  GET /api/playlist/:id → Get playlist details
+  ```
+
+### Database Schema (Key Tables)
+```
+Users
+  id (PK), username, email, password_hash, created_at, profile_pic_url, bio
+
+Artists
+  id (PK), name, image_url, bio, genres (JSON array), external_links (JSON)
+
+Tracks
+  id (PK), title, artist_id (FK), genre, release_year, audio_preview_url, duration_ms, external_id (Spotify)
+
+UserPreferences
+  id (PK), user_id (FK), favorite_genres (JSON array), created_at, updated_at
+
+GameSessions
+  id (PK), user_id (FK), difficulty, score, accuracy_percent, num_rounds, created_at, duration_seconds
+
+GameRounds
+  id (PK), game_session_id (FK), track_id (FK), user_answer_id (FK), is_correct, response_time_ms
+
+UserFavorites
+  id (PK), user_id (FK), artist_id (FK), created_at
+
+UserPlaylists
+  id (PK), user_id (FK), name, description, created_at, is_public
+
+PlaylistTracks
+  id (PK), playlist_id (FK), track_id (FK), position
+
+Leaderboard
+  id (PK), user_id (FK), period (daily/weekly/alltime), rank, score, accuracy_percent, games_played
+
+Achievements
+  id (PK), name, description, badge_icon_url, criteria_type (enum: points/streak/accuracy/games/genre_mastery), criteria_value (threshold number), category (enum: gameplay/accuracy/performance/dedication)
+
+UserAchievements
+  id (PK), user_id (FK), achievement_id (FK), unlocked_at, progress_value (int, for tracking "4/5 correct" etc)
+```
+
+---
+
+## Data Requirements
+
+### Artist & Track Data
+- **Minimum Catalog**: 500+ EDM artists, 5,000+ tracks
+- **Data Sources**:
+  - Spotify API (recommended for audio previews, track metadata)
+  - Last.fm API (for genre classification, similar artists)
+  - Manual curation of popular EDM artists by subgenre
+  
+- **Data Points per Track**:
+  - Title, Artist(s), Genre, Subgenre, Release Date
+  - Audio preview (1-second clip playable)
+  - Duration, BPM (tempo)
+  - Energy level (0-100 scale for difficulty filtering)
+
+### User-Generated Data
+- User profiles, preferences, game scores
+- Favorite artists, bookmarked tracks, custom playlists
+
+---
+
+## User Workflows
+
+### Workflow 1: New User Onboarding
+1. Sign up / Login
+2. Select favorite genres from multi-select list
+3. System generates initial artist recommendations
+4. User can browse recommended artists or play first game
+5. Dashboard populated with empty stats (reset on first game)
+
+### Workflow 2: Play Guessing Game
+1. Navigate to "Game" section
+2. Select difficulty and optional filters (genre, era)
+3. Click "Start Game" → Audio plays, options appear
+4. Select answer or use hint
+5. Get immediate feedback + points
+6. Next round or finish session
+7. Score added to leaderboard & user profile stats
+
+### Workflow 3: Discover Artists
+1. Navigate to "Discover" section
+2. Browse recommended artists OR use search
+3. Click artist card → view bio, top tracks, similar artists
+4. Option to favorite artist → added to dashboard
+5. Can click on similar artists to explore further
+
+### Workflow 4: Manage Dashboard
+1. User logs in → sees personalized dashboard
+2. View statistics & achievements
+3. Access favorite artists list
+4. Create new playlist by selecting from recommendations
+5. Track recent game activity & accuracy trends
+
+---
+
+## Success Criteria & MVP Definition
+
+### MVP (Minimum Viable Product) — LAUNCH DAY 1
+- [x] Artist discovery with genre-based filtering & recommendations
+- [x] Song guessing game with scoring, hints, difficulty levels
+- [x] User authentication & profiles
+- [x] Personalized dashboard with stats & achievements
+- [x] All-time leaderboard
+- [x] Achievement/badge system (unlocks based on game performance)
+- [x] Mobile-responsive design
+- [x] Spotify API integration (audio previews, artist data)
+
+### Phase 2 (Post-MVP)
+- [ ] Playlist builder with export to Spotify
+- [ ] Daily/Weekly leaderboards with reset
+- [ ] Social features (follow users, share scores)
+- [ ] Advanced recommendations (collaborative filtering)
+- [ ] User streaks & persistence tracking
+
+### Phase 3 (Future)
+- [ ] Mobile app (React Native)
+- [ ] AI-based mood-to-artist matching
+- [ ] Live DJ mode (continuous mix generation)
+- [ ] User-generated content (artist reviews, personal stats sharing)
+
+---
+
+## Design & UX Guidelines
+
+### Visual Theme & Inspiration
+- **Primary Reference**: Spotify's dark, modern design language
+- **Color Palette**:
+  - Background: Spotify dark gray (#121212), true black accents (#000000)
+  - Primary accent: Spotify green (#1DB954) OR custom neon accent (Electric Blue #00D9FF, Hot Pink #FF006E, Lime #CCFF00)
+  - Secondary text: Light gray (#B3B3B3)
+  - Error/warning: Red (#E74C3C)
+  - Card backgrounds: Dark gray (#1E1E1E), lighter on hover (#282828)
+  
+- **Typography**:
+  - Primary font: Inter or Poppins (modern, clean, high readability)
+  - Headings: Bold weight (700-800), size 24-48px
+  - Body text: Regular weight (400-500), size 14-16px
+  - All caps labels: Uppercase, letter spacing +0.5px
+  
+- **Visual Hierarchy**:
+  - Large, prominent hero cards (artist images 280x280px, track thumbnails)
+  - Subtle shadows & depth (box-shadow: 0 8px 24px rgba(0,0,0,0.5))
+  - Generous whitespace/padding (16px, 24px, 32px)
+  - Smooth gradients for visual interest
+
+### Animation & Interaction Guidelines
+
+**Page Transitions**:
+- Fade-in on load (300ms ease-in-out)
+- Slide-up for modals/overlays (400ms cubic-bezier(0.34, 1.56, 0.64, 1))
+- Cross-fade between routes (200ms ease-in-out)
+
+**Component-Level Animations**:
+- **Buttons**: Scale (1 → 1.05) on hover, 150ms ease-out
+- **Cards**: Lift effect on hover (transform: translateY(-8px)) + shadow increase, 200ms ease-out
+- **Artist Cards**: Image zoom (1 → 1.08) + overlay gradient fade-in on hover, 250ms ease-out
+- **Input Fields**: Underline slide-in on focus, 200ms ease-out
+- **Leaderboard Ranks**: Number counter animate from 0 to final value (500ms)
+
+**Game UI Animations**:
+- **Audio Player**: Waveform animation during playback (bars bounce to beat)
+- **Question Options**: Stagger-in animation (each option appears 100ms apart, ease-out)
+- **Correct/Incorrect Feedback**: 
+  - Correct: Green check-mark with scale + bounce (600ms), bg flash green (#1DB954)
+  - Incorrect: Red X with shake animation (400ms), bg flash red (#E74C3C)
+- **Score Pop-up**: Float up & fade out (+20px translateY) when points awarded, 800ms
+- **Streak Counter**: Pulse animation when streak increases (scale 1 → 1.2 → 1), 400ms
+
+**Dashboard Animations**:
+- **Stats Cards**: Number counters count-up on first load (0 → final value), 1.5s ease-out
+- **Achievement Badges**: Scale-in with rotation on unlock (0 → 1, 360deg) , 600ms cubic-bezier
+- **Progress Bars**: Width animate from 0 → target width, 800ms ease-out
+- **Charts**: Fade-in data points sequentially (staggered 50ms delays)
+
+**Hover & Interactive States**:
+- All interactive elements have visual feedback (color change, scale, glow)
+- Disabled elements: 50% opacity, no pointer-events
+- Loading states: Skeleton loaders or subtle shimmer animation (2s infinite)
+- Micro-interactions: Small bounces, slides, scale changes (100-200ms)
+
+### Component Design Details
+
+**Artist Cards**:
+- Image container: 280x280px, rounded corners (8px)
+- Image: Cover photo with gradient overlay on hover
+- Text overlay (on hover): Artist name (bold), genres (small), follow count
+- Favorite button: Heart icon (top-right), toggle on click with animation
+- Shadow depth: 0 8px 24px rgba(0,0,0,0.5)
+
+**Game Interface**:
+- Large audio player (center stage): Waveform visualization + play/pause button
+- Song progress bar: Animated line showing 1-second clip position
+- Timer countdown: Displayed in top-right, color changes (green → yellow → red)
+- Answer options: 4 large buttons in 2x2 grid, full width on mobile
+- Hint button: Subtle, toggles hint overlay with fade-in animation
+- Score display: Large, bold, updates with pop-up animation
+
+**Dashboard Stats**:
+- Stat cards in 2x2 grid (desktop) or 1-column (mobile)
+- Each card has icon, label, and animated counter
+- Mini charts: Line chart for accuracy trend, pie chart for genre breakdown
+- Color-coded stats (accuracy %, streaks, points)
+
+**Leaderboard**:
+- Rank badges: #1, #2, #3 with special styling (gold, silver, bronze)
+- User avatars: 40x40px circular images
+- Horizontal scrollable on mobile
+- Animated rank changes (highlight + slide animation on user refresh)
+
+**Navigation**:
+- Sidebar (desktop) / Bottom nav (mobile) with Spotify-style appearance
+- Icons + labels, active state with accent color + bg
+- Smooth scroll-to-section behavior
+- Mobile hamburger menu with slide-in overlay
+
+### Mobile Responsiveness
+- Breakpoints: 320px (mobile), 768px (tablet), 1024px (desktop)
+- Touch targets: Minimum 48x48px for all interactive elements
+- Bottom navigation or sticky header on mobile
+- Stacked layout for cards (1 column mobile, 2-3 desktop)
+- Adjusted font sizes for readability on small screens
+
+### Accessibility & Visual Design
+- High contrast ratios (WCAG AA minimum 4.5:1)
+- Clear focus states for keyboard navigation (2px outline)
+- Icon + text labels (not icon-only buttons)
+- Alternative text for images
+- Animated elements can be reduced with `prefers-reduced-motion`
+
+---
+
+## Implementation Notes
+
+### API Integration (REQUIRED)
+
+**Spotify API** (CRITICAL - PRIMARY DATA SOURCE)
+- OAuth2 for user authentication & login
+- Fetch track data: title, artist, genre, duration, popularity
+- Audio previews (30-second clips) — truncate to 1 second for guessing game
+- Artist info: bio, images, genres, follower count, top tracks
+- Playlist export to user's Spotify account (Phase 2)
+- Handle rate limits: 429 responses require exponential backoff (max 30 retries)
+- Implement caching layer (Redis, 1-hour TTL) to minimize API calls
+- Budget: ~100-150 API calls per game session (for tracks + artist metadata)
+
+### Deployment
+- **Frontend**: Vercel, Netlify, or AWS S3 + CloudFront
+- **Backend**: Heroku, Railway, Render, or AWS (EC2/Lambda)
+- **Database**: Managed PostgreSQL (Supabase, Railway, AWS RDS)
+- **Redis**: Redis Cloud or self-hosted
+
+---
+
+## Spotify Design Reference & Implementation Guide
+
+### What Makes Spotify's UI Work
+
+1. **Dark Theme Mastery**
+   - Background gradients shift subtly (never pure black, always slightly gray)
+   - Cards have 2-3 depth levels (bg, hover-bg, selected-bg)
+   - Subtle shadows create visual hierarchy without clutter
+
+2. **Typography & Spacing**
+   - Generous padding/margins (whitespace is intentional, not wasted)
+   - Clear visual hierarchy (size + weight + color)
+   - Consistent 8px or 16px grid for alignment
+
+3. **Interactive Feedback**
+   - Every clickable element responds immediately (no 500ms delays)
+   - Hover states are obvious but not jarring (subtle color shift + scale)
+   - Active/selected states use color, not just outline
+
+4. **Navigation UX**
+   - Sidebar (or collapsible on mobile) shows current section
+   - Breadcrumbs or back buttons for deep navigation
+   - Quick shortcuts to home, search, favorites
+
+5. **Album/Artist Imagery**
+   - Large hero images (280x280px or larger)
+   - Rounded corners (8px)
+   - Gradient overlay on hover for depth
+   - Image-to-text contrast managed with overlays/shadows
+
+### Implementation Checklist for EDM Hub
+
+- [ ] Dark theme color palette applied globally (CSS variables)
+- [ ] Spotify green (#1DB954) OR custom accent color used consistently
+- [ ] Sidebar navigation with active state indicator
+- [ ] Artist cards with image zoom + overlay on hover
+- [ ] Large audio player UI with waveform visualization
+- [ ] Smooth page transitions (fade/slide)
+- [ ] Button & input hover/focus states animated (scale, color change)
+- [ ] Leaderboard with animated rank badges
+- [ ] Achievement badges unlock with scale + rotation animation
+- [ ] Score pop-ups float up & fade out smoothly
+- [ ] Game options stagger-in (not all appear at once)
+- [ ] Dashboard stats counters animate from 0 → target value
+- [ ] Responsive design: sidebar collapses on mobile, bottom nav appears
+- [ ] No janky animations: all use 60fps-friendly transforms & opacity
+- [ ] Skeleton loaders for async data (artist recommendations, leaderboard)
+
+### Visual Inspiration References
+- Spotify's home page layout (hero + personalized cards below)
+- Spotify's now playing page (large album art, controls, up next queue)
+- Spotify's library page (grid of playlists/artists with hover effects)
+- Apple Music's modern design (for reference on animations)
+
+### Performance Considerations
+- Cache artist/track data (Redis, 1-hour TTL)
+- Lazy-load artist images
+- Compress audio previews
+- Pagination for leaderboards (20 results per page)
+- Debounce search input
+
+### Security
+- Sanitize user input (prevent SQL injection, XSS)
+- Rate limit API endpoints (prevent abuse)
+- Hash passwords (bcrypt)
+- Validate JWT tokens on protected routes
+- Secure audio file serving (presigned URLs if hosting on S3)
+
+---
+
+## Development Roadmap
+
+**Week 1-2**: Setup, database design, Spotify API integration, basic artist CRUD
+**Week 3-4**: Frontend artist discovery UI, recommendation logic
+**Week 5-6**: Guessing game backend logic, audio player implementation
+**Week 7-8**: Game frontend, scoring system, basic leaderboard
+**Week 9-10**: Dashboard backend & frontend, user stats aggregation
+**Week 11-12**: Testing, bug fixes, deployment, documentation
+
+---
+
+## Confirmed Specifications (No Changes Needed)
+
+✅ **Audio Source**: Spotify API (no self-hosting)
+✅ **MVP Scope**: All 3 features (Artist Recs + Guessing Game + Dashboard) launching day 1
+✅ **Project Type**: Fun hobby project (no monetization)
+✅ **Personalization**: Full stats, achievements, performance tracking
+✅ **Social Features**: Phase 2 (post-MVP)
+
+## Remaining Questions to Clarify
+
+1. **Scale**: How many concurrent users are you expecting initially? (affects Redis/DB sizing)
+2. **Frontend**: React or Vue?
+3. **Backend**: Node.js/Express or Python/FastAPI?
+4. **Analytics**: Do you want user behavior tracking (Google Analytics, Mixpanel)?
+5. **Deployment**: Self-hosted or managed services (Vercel, Railway, Render)?
+
+---
+
+## Deliverables
+- Fully functional web application (desktop + mobile responsive)
+- Clean, maintainable code with documentation
+- Database migrations & seed scripts
+- Deployment setup (Docker, CI/CD pipeline optional)
+- README with setup & deployment instructions

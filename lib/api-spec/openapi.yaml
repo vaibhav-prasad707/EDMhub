@@ -10,6 +10,14 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: artists
+    description: EDM artist discovery and favorites
+  - name: game
+    description: Song guessing game
+  - name: dashboard
+    description: Personalized dashboard and activity
+  - name: leaderboard
+    description: Player rankings
 paths:
   /healthz:
     get:
@@ -24,7 +32,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /genres:
+    get:
+      operationId: listGenres
+      tags: [artists]
+      summary: List EDM genres
+      responses:
+        "200":
+          description: Available genres
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Genre"
+  /artists:
+    get:
+      operationId: listArtists
+      tags: [artists]
+      summary: Browse EDM artists
+      parameters:
+        - name: genre
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 12
+      responses:
+        "200":
+          description: Artist catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Artist"
+  /artists/{artistId}:
+    get:
+      operationId: getArtist
+      tags: [artists]
+      summary: Get artist details
+      parameters:
+        - $ref: "#/components/parameters/ArtistId"
+      responses:
+        "200":
+          description: Artist detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtistDetail"
+        "404":
+          description: Artist not found
+  /recommendations:
+    get:
+      operationId: getRecommendations
+      tags: [artists]
+      summary: Get personalized artist recommendations
+      parameters:
+        - name: genres
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Comma-separated genre names
+      responses:
+        "200":
+          description: Recommended artists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Artist"
+  /favorites/artists/{artistId}:
+    post:
+      operationId: toggleArtistFavorite
+      tags: [artists]
+      summary: Toggle an artist favorite
+      parameters:
+        - $ref: "#/components/parameters/ArtistId"
+      responses:
+        "200":
+          description: Updated favorite state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteState"
+  /game/sessions:
+    post:
+      operationId: startGame
+      tags: [game]
+      summary: Start a guessing game session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameStartInput"
+      responses:
+        "201":
+          description: Started game session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSession"
+  /game/sessions/{sessionId}:
+    get:
+      operationId: getGameSession
+      tags: [game]
+      summary: Get a game session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Game session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameSession"
+        "404":
+          description: Game session not found
+  /game/sessions/{sessionId}/answers:
+    post:
+      operationId: answerGameQuestion
+      tags: [game]
+      summary: Submit an answer
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GameAnswerInput"
+      responses:
+        "200":
+          description: Answer result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameAnswerResult"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get the current user's dashboard
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [dashboard]
+      summary: Get recent user activity
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [leaderboard]
+      summary: Get all-time leaderboard
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Leaderboard"
 components:
+  parameters:
+    ArtistId:
+      name: artistId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +244,331 @@ components:
           type: string
       required:
         - status
+    Genre:
+      type: object
+      required: [id, name, count]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        count:
+          type: integer
+    Track:
+      type: object
+      required: [id, title, artistName, genre, releaseYear, duration, color]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        artistName:
+          type: string
+        genre:
+          type: string
+        releaseYear:
+          type: integer
+        duration:
+          type: string
+        color:
+          type: string
+        previewUrl:
+          type: ["string", "null"]
+    Artist:
+      type: object
+      required: [id, name, imageUrl, bio, genres, followers, accent, topTrack]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        imageUrl:
+          type: string
+        bio:
+          type: string
+        genres:
+          type: array
+          items:
+            type: string
+        followers:
+          type: string
+        accent:
+          type: string
+        topTrack:
+          $ref: "#/components/schemas/Track"
+        isFavorite:
+          type: boolean
+    ArtistDetail:
+      allOf:
+        - $ref: "#/components/schemas/Artist"
+        - type: object
+          required: [topTracks, similarArtists]
+          properties:
+            topTracks:
+              type: array
+              items:
+                $ref: "#/components/schemas/Track"
+            similarArtists:
+              type: array
+              items:
+                $ref: "#/components/schemas/Artist"
+    FavoriteState:
+      type: object
+      required: [artistId, isFavorite]
+      properties:
+        artistId:
+          type: string
+        isFavorite:
+          type: boolean
+    GameStartInput:
+      type: object
+      required: [difficulty, rounds]
+      properties:
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        rounds:
+          type: integer
+          enum: [5, 10, 20]
+        genre:
+          type: ["string", "null"]
+        era:
+          type: ["string", "null"]
+    GameOption:
+      type: object
+      required: [id, title, artistName]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        artistName:
+          type: string
+    GameQuestion:
+      type: object
+      required: [id, clipLabel, genre, releaseYear, options, correctOptionId]
+      properties:
+        id:
+          type: string
+        clipLabel:
+          type: string
+        genre:
+          type: string
+        releaseYear:
+          type: integer
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/GameOption"
+        correctOptionId:
+          type: string
+        track:
+          $ref: "#/components/schemas/Track"
+    GameSession:
+      type: object
+      required: [id, difficulty, rounds, currentRound, score, streak, question, completed]
+      properties:
+        id:
+          type: string
+        difficulty:
+          type: string
+        rounds:
+          type: integer
+        currentRound:
+          type: integer
+        score:
+          type: integer
+        streak:
+          type: integer
+        question:
+          $ref: "#/components/schemas/GameQuestion"
+        completed:
+          type: boolean
+    GameAnswerInput:
+      type: object
+      required: [questionId, optionId, responseTimeMs, hintsUsed]
+      properties:
+        questionId:
+          type: string
+        optionId:
+          type: string
+        responseTimeMs:
+          type: integer
+        hintsUsed:
+          type: integer
+    GameAnswerResult:
+      type: object
+      required: [correct, correctOptionId, pointsEarned, totalScore, streak, completed, nextQuestion]
+      properties:
+        correct:
+          type: boolean
+        correctOptionId:
+          type: string
+        pointsEarned:
+          type: integer
+        totalScore:
+          type: integer
+        streak:
+          type: integer
+        completed:
+          type: boolean
+        nextQuestion:
+          type: ["object", "null"]
+          properties:
+            id:
+              type: string
+            clipLabel:
+              type: string
+            genre:
+              type: string
+            releaseYear:
+              type: integer
+            options:
+              type: array
+              items:
+                $ref: "#/components/schemas/GameOption"
+            correctOptionId:
+              type: string
+            track:
+              $ref: "#/components/schemas/Track"
+    Dashboard:
+      type: object
+      required: [profile, stats, genreBreakdown, accuracyTrend, favoriteArtists, achievements]
+      properties:
+        profile:
+          $ref: "#/components/schemas/Profile"
+        stats:
+          $ref: "#/components/schemas/DashboardStats"
+        genreBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenreStat"
+        accuracyTrend:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrendPoint"
+        favoriteArtists:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artist"
+        achievements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Achievement"
+    Profile:
+      type: object
+      required: [username, initials, bio, memberSince]
+      properties:
+        username:
+          type: string
+        initials:
+          type: string
+        bio:
+          type: string
+        memberSince:
+          type: string
+    DashboardStats:
+      type: object
+      required: [gamesPlayed, accuracy, totalPoints, currentStreak, bestStreak, artistOfWeek, favoriteGenre, hottestTrack]
+      properties:
+        gamesPlayed:
+          type: integer
+        accuracy:
+          type: number
+        totalPoints:
+          type: integer
+        currentStreak:
+          type: integer
+        bestStreak:
+          type: integer
+        artistOfWeek:
+          type: string
+        favoriteGenre:
+          type: string
+        hottestTrack:
+          type: string
+    GenreStat:
+      type: object
+      required: [genre, value, color]
+      properties:
+        genre:
+          type: string
+        value:
+          type: number
+        color:
+          type: string
+    TrendPoint:
+      type: object
+      required: [day, accuracy]
+      properties:
+        day:
+          type: string
+        accuracy:
+          type: number
+    Achievement:
+      type: object
+      required: [id, name, description, progress, target, unlocked]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        progress:
+          type: integer
+        target:
+          type: integer
+        unlocked:
+          type: boolean
+        unlockedAt:
+          type: ["string", "null"]
+    ActivityItem:
+      type: object
+      required: [id, kind, title, detail, timestamp, accent]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        timestamp:
+          type: string
+        accent:
+          type: string
+    LeaderboardEntry:
+      type: object
+      required: [rank, username, initials, score, accuracy, games, accent, isCurrentUser]
+      properties:
+        rank:
+          type: integer
+        username:
+          type: string
+        initials:
+          type: string
+        score:
+          type: integer
+        accuracy:
+          type: number
+        games:
+          type: integer
+        accent:
+          type: string
+        isCurrentUser:
+          type: boolean
+    Leaderboard:
+      type: object
+      required: [entries, currentUserRank, totalPlayers]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        currentUserRank:
+          type: integer
+        totalPlayers:
+          type: integer
 

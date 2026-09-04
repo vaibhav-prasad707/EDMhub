@@ -1,6 +1,6 @@
-# [Project name]
+# EDM Hub
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+EDM Hub is a fluorescent crate-digger for discovering electronic artists, guessing tracks, and tracking listening-game progress.
 
 ## Run & Operate
 
@@ -22,23 +22,34 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/edm-hub/src/App.tsx` — routed web app and product interactions.
+- `artifacts/edm-hub/src/index.css` — fluorescent zine theme, typography, motion, and responsive rules.
+- `lib/api-spec/openapi.yaml` — source of truth for the artist, game, dashboard, and leaderboard API.
+- `artifacts/api-server/src/routes/edm.ts` — EDM API handlers and demo game scoring.
+- `artifacts/api-server/src/lib/edm-data.ts` — seeded artist, track, genre, and question catalog.
+- `lib/db/src/schema/edm.ts` — PostgreSQL persistence for catalog, favorites, games, and rounds.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The web app uses the shared API server and generated React Query hooks rather than a frontend-only mock.
+- The first build uses a stable demo DJ profile while keeping favorites and game sessions persisted in PostgreSQL.
+- The visual language follows the supplied fluorescent zine reference instead of copying Spotify's default dark UI.
+- Catalog rows are seeded locally so the product is useful before a Spotify connector is available.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Artist discovery with genre filters, search, recommendations, artist details, and favorites.
+- A difficulty-based song guessing game with hints, streaks, time bonuses, and results.
+- Dashboard, library, profile, achievements, recent activity, and all-time leaderboard views.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Apply the supplied extreme fluorescent zine direction while building EDM Hub.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Regenerate the typed client and validation schemas after changing `lib/api-spec/openapi.yaml`.
+- The generated Zod validation package requires Zod 4 because current Orval output uses `zod.int()`.
 
 ## Pointers
 

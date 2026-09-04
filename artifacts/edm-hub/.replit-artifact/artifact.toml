@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "EDM Hub"
+description = "A full-stack EDM discovery, song guessing, and personal music dashboard for electronic music fans."
+version = "1.0.0"
+id = "artifacts/edm-hub"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18796
+
+[services.development]
+run = "pnpm --filter @workspace/edm-hub run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/edm-hub", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/edm-hub/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18796"
+BASE_PATH = "/"
