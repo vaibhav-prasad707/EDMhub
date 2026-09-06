@@ -4,6 +4,9 @@ EDM Hub is a fluorescent crate-digger for discovering electronic artists, guessi
 
 The project is a full-stack TypeScript application with a React/Vite frontend, an Express API, PostgreSQL persistence, and generated OpenAPI client types.
 
+<img width="1526" height="787" alt="Screenshot 2026-09-06 at 16 05 23" src="https://github.com/user-attachments/assets/dee8d8ff-da24-4b6a-9b6e-f712100da3c7" />
+
+
 ## Features
 
 - Artist discovery with search, genre filters, recommendations, and artist details
