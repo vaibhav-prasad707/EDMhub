@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.lib.scoring import calculate_points
 from pydantic import BaseModel, Field
 
+
 router = APIRouter()
 
 # --- Schemas ---
