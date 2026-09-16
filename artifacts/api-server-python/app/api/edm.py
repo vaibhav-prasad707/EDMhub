@@ -12,6 +12,10 @@ router = APIRouter()
 
 # --- Schemas ---
 
+class SystemStatus(BaseModel):
+    database: str
+    spotify: bool
+
 class GenreResponse(BaseModel):
     id: str
     name: str
@@ -91,6 +95,14 @@ class LeaderboardEntry(BaseModel):
     score: int
 
 # --- Endpoints ---
+
+@router.get("/system/status", response_model=SystemStatus)
+def get_system_status(session: Session = Depends(get_session)):
+    from app.lib.spotify_client import spotify_client
+    return SystemStatus(
+        database="connected",
+        spotify=spotify_client.is_available()
+    )
 
 @router.get("/genres", response_model=List[GenreResponse])
 def get_genres(session: Session = Depends(get_session)):

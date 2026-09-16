@@ -6,7 +6,8 @@ tmp
 out-tsc
 *.tsbuildinfo
 .expo
-.expo-shared
+.expo-s
+.expo-s
 
 # dependencies
 node_modules
@@ -47,3 +48,13 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.env.*
+.venv/
+env/
