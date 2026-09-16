@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select, func, desc
 from app.db.session import get_session
@@ -6,6 +6,7 @@ from app.db.models import Artist, Track, Favorite, GameSession, GameRound
 from app.core.config import settings
 from app.lib.scoring import calculate_points
 from pydantic import BaseModel, Field
+
 
 router = APIRouter()
 
