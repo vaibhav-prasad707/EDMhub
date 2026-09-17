@@ -2,7 +2,7 @@
 
 **EDM Hub is a neon-lit discovery playground for electronic music fans. Dig through emerging and iconic artists, test your track knowledge in fast-paced guessing games, save your favorites, and build a personal profile of the sounds that keep you moving.**
 
-The project is a full-stack TypeScript application with a React/Vite frontend, an Express API, PostgreSQL persistence, and generated OpenAPI client types.
+The project is a full-stack TypeScript application with a React/Vite frontend, an Express API, PostgreSQL persistence, and generated OpenAPI client types. 
 
 <img width="1526" height="787" alt="Screenshot 2026-09-06 at 16 05 23" src="https://github.com/user-attachments/assets/dee8d8ff-da24-4b6a-9b6e-f712100da3c7" />
 
