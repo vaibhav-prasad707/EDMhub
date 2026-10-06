@@ -1,4 +1,4 @@
-# EDM Hub
+# EDM Hub 
 
 **EDM Hub is a neon-brutalist discovery playground for electronic dance music fans. Dig through emerging and iconic artists, test your track knowledge in fast-paced guessing games, save your favorites, and build a personal profile of the sounds that keep you moving.**
 
