@@ -1,5 +1,4 @@
 from typing import List, Dict, Any, Optional
-from app.db.models import Artist, Track
 
 IMAGE_URLS = [
     "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=900&q=85",
@@ -21,6 +20,12 @@ GENRES = [
     {"id": "future-bass", "name": "Future Bass", "count": 62},
     {"id": "garage", "name": "Garage", "count": 44},
     {"id": "ambient", "name": "Ambient", "count": 31},
+]
+
+# Royalty-free placeholder audio (SoundHelix demo songs, https://www.soundhelix.com).
+# These are NOT the actual tracks; they stand in until real previews are imported.
+PREVIEW_URLS = [
+    f"https://www.soundhelix.com/examples/mp3/SoundHelix-Song-{n}.mp3" for n in range(1, 17)
 ]
 
 ARTIST_SEEDS = [
@@ -110,43 +115,102 @@ EXTRA_TRACK_NAMES = [
 ]
 
 def get_artist_seed_rows() -> List[Dict[str, Any]]:
-    rows = []
-    for i, artist in enumerate(ARTIST_SEEDS):
-        rows.append({
+    return [
+        {
             "id": artist["id"],
             "name": artist["name"],
-            "imageUrl": IMAGE_URLS[i],
+            "image_url": IMAGE_URLS[i],
             "bio": artist["bio"],
-            "genres": artist["genres"],
+            "genres": list(artist["genres"]),
             "followers": artist["followers"],
             "accent": artist["accent"],
-        })
-    return rows
+        }
+        for i, artist in enumerate(ARTIST_SEEDS)
+    ]
+
 
 def get_track_seed_rows() -> List[Dict[str, Any]]:
     rows = []
     for i, artist in enumerate(ARTIST_SEEDS):
-        # Top track
+        title, genre, year, duration, color = artist["track"]
         rows.append({
             "id": f"{artist['id']}-top",
-            "title": artist["track"][0],
-            "artistId": artist["id"],
-            "genre": artist["track"][1],
-            "releaseYear": artist["track"][2],
-            "duration": artist["track"][3],
-            "color": artist["track"][4],
-            "previewUrl": None,
+            "title": title,
+            "artist_id": artist["id"],
+            "genre": genre,
+            "release_year": year,
+            "duration": duration,
+            "color": color,
+            "preview_url": PREVIEW_URLS[i * 2],
         })
-        # Alt track
-        track_info = EXTRA_TRACK_NAMES[i]
+        title, genre, year, duration, color = EXTRA_TRACK_NAMES[i]
         rows.append({
             "id": f"{artist['id']}-alt",
-            "title": track_info[0],
-            "artistId": artist["id"],
-            "genre": track_info[1],
-            "releaseYear": track_info[2],
-            "duration": track_info[3],
-            "color": track_info[4],
-            "previewUrl": None,
+            "title": title,
+            "artist_id": artist["id"],
+            "genre": genre,
+            "release_year": year,
+            "duration": duration,
+            "color": color,
+            "preview_url": PREVIEW_URLS[i * 2 + 1],
         })
     return rows
+
+
+# --- In-memory catalog served by the API (camelCase, matches the OpenAPI contract) ---
+
+_ARTIST_NAMES = {a["id"]: a["name"] for a in ARTIST_SEEDS}
+
+API_TRACKS: List[Dict[str, Any]] = [
+    {
+        "id": t["id"],
+        "title": t["title"],
+        "artistName": _ARTIST_NAMES.get(t["artist_id"], ""),
+        "genre": t["genre"],
+        "releaseYear": t["release_year"],
+        "duration": t["duration"],
+        "color": t["color"],
+        "previewUrl": t["preview_url"],
+    }
+    for t in get_track_seed_rows()
+]
+
+_TRACKS_BY_ID = {t["id"]: t for t in API_TRACKS}
+
+API_ARTISTS: List[Dict[str, Any]] = [
+    {
+        "id": a["id"],
+        "name": a["name"],
+        "imageUrl": a["image_url"],
+        "bio": a["bio"],
+        "genres": a["genres"],
+        "followers": a["followers"],
+        "accent": a["accent"],
+        "topTrack": _TRACKS_BY_ID[f"{a['id']}-top"],
+    }
+    for a in get_artist_seed_rows()
+]
+
+
+def get_artist(artist_id: str) -> Optional[Dict[str, Any]]:
+    return next((a for a in API_ARTISTS if a["id"] == artist_id), None)
+
+
+def question_for_round(round_num: int) -> Dict[str, Any]:
+    n = len(API_TRACKS)
+    correct = API_TRACKS[(round_num - 1) % n]
+    options = [API_TRACKS[(round_num - 1 + offset * 2) % n] for offset in range(4)]
+    if not any(o["id"] == correct["id"] for o in options):
+        options[0] = correct
+    return {
+        "id": f"question-{round_num}",
+        "clipLabel": f"CLIP 0{round_num} / 01:00",
+        "genre": correct["genre"],
+        "releaseYear": correct["releaseYear"],
+        "options": [
+            {"id": o["id"], "title": o["title"], "artistName": o["artistName"]}
+            for o in options
+        ],
+        "correctOptionId": correct["id"],
+        "track": correct,
+    }

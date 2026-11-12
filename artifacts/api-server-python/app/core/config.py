@@ -1,17 +1,17 @@
-import os
 from typing import Optional
-from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/edmhub")
-    DEMO_USER_ID: str = "demo-dj"
-    API_V1_STR: str = "/api"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Spotify API Credentials
-    SPOTIPY_CLIENT_ID: Optional[str] = os.getenv("SPOTIPY_CLIENT_ID")
-    SPOTIPY_CLIENT_SECRET: Optional[str] = os.getenv("SPOTIPY_CLIENT_SECRET")
+    # Required: e.g. postgresql://postgres:pw@localhost:5432/edm_hub
+    DATABASE_URL: str
+    DEMO_USER_ID: str = "demo-dj"
+
+    # Spotify API credentials (server-side only; integration is currently disabled)
+    SPOTIPY_CLIENT_ID: Optional[str] = None
+    SPOTIPY_CLIENT_SECRET: Optional[str] = None
+
 
 settings = Settings()

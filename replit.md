@@ -4,30 +4,28 @@ EDM Hub is a fluorescent crate-digger for discovering electronic artists, guessi
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `cd artifacts/api-server-python && python -m app.main` — run the API server (port from `PORT`, default 8080)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks from the OpenAPI spec
 - Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: pnpm workspaces, Node.js 24, TypeScript 5.9
+- API: FastAPI (Python)
+- DB: PostgreSQL + SQLModel
+- API codegen: Orval (client hooks from OpenAPI spec)
 
 ## Where things live
 
 - `artifacts/edm-hub/src/App.tsx` — routed web app and product interactions.
 - `artifacts/edm-hub/src/index.css` — fluorescent zine theme, typography, motion, and responsive rules.
 - `lib/api-spec/openapi.yaml` — source of truth for the artist, game, dashboard, and leaderboard API.
-- `artifacts/api-server/src/routes/edm.ts` — EDM API handlers and demo game scoring.
-- `artifacts/api-server/src/lib/edm-data.ts` — seeded artist, track, genre, and question catalog.
-- `lib/db/src/schema/edm.ts` — PostgreSQL persistence for catalog, favorites, games, and rounds.
+- `artifacts/api-server-python/app/api/edm.py` — EDM API handlers.
+- `artifacts/api-server-python/app/lib/scoring.py` — game scoring.
+- `artifacts/api-server-python/app/lib/edm_data.py` — seeded artist, track, genre, and question catalog.
+- `artifacts/api-server-python/app/db/models.py` — PostgreSQL persistence for catalog, favorites, games, and rounds.
 
 ## Architecture decisions
 
@@ -49,7 +47,7 @@ EDM Hub is a fluorescent crate-digger for discovering electronic artists, guessi
 ## Gotchas
 
 - Regenerate the typed client and validation schemas after changing `lib/api-spec/openapi.yaml`.
-- The generated Zod validation package requires Zod 4 because current Orval output uses `zod.int()`.
+- The FastAPI routes and response shapes must match `openapi.yaml` by hand; there is no server-side codegen.
 
 ## Pointers
 

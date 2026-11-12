@@ -27,6 +27,7 @@ import {
   useStartGame,
   useToggleArtistFavorite,
   type Artist,
+  type Track,
   type GameQuestion,
   type GameSession,
   type LeaderboardEntry,
@@ -45,6 +46,7 @@ import {
   ListMusic,
   Menu,
   Music2,
+  Pause,
   Play,
   Search,
   Sparkles,
@@ -55,6 +57,7 @@ import {
 } from 'lucide-react';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import NotFound from '@/pages/not-found';
+import { PlayerProvider, usePlayer } from '@/lib/player';
 
 const queryClient = new QueryClient();
 const colors = ['#c7ff23', '#ff3b9d', '#16d9d2', '#ff793f', '#a78bfa'];
@@ -95,9 +98,34 @@ function Shell({ children }: { children: ReactNode }) {
   </div>;
 }
 
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+  const m = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+function TrackPlayButton({ track, queue, className = '', size = 16 }: { track: Track; queue?: Track[]; className?: string; size?: number }) {
+  const player = usePlayer();
+  const active = player.current?.id === track.id;
+  const isPlaying = active && player.playing;
+  if (!track.previewUrl) return null;
+  return <button onClick={e => { e.stopPropagation(); player.playTrack(track, queue); }} className={`grid shrink-0 place-items-center border-2 border-foreground bg-primary hover:bg-card ${className}`} aria-label={`${isPlaying ? 'Pause' : 'Play'} ${track.title}`} data-testid={`button-play-${track.id}`}>{isPlaying ? <Pause size={size} fill="currentColor" /> : <Play size={size} fill="currentColor" />}</button>;
+}
+
 function Player() {
-  const [playing, setPlaying] = useState(false);
-  return <div className="fixed bottom-0 left-0 right-0 z-30 border-t-2 border-foreground bg-[#ff3b9d] px-4 py-3 md:left-[252px]"><div className="mx-auto flex max-w-[1400px] items-center gap-4"><button onClick={() => setPlaying(!playing)} className="grid h-10 w-10 shrink-0 place-items-center border-2 border-foreground bg-primary hover:bg-card" data-testid="button-player-toggle">{playing ? <span className="font-bold">Ⅱ</span> : <Play size={16} fill="currentColor" />}</button><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">Night Shift Radio</p>{playing && <span className="music-eq text-foreground"><i /><i /><i /><i /></span>}</div><p className="zine-label truncate opacity-70">EDM HUB SELECTS / SIGNAL 004</p></div><div className="hidden items-center gap-2 sm:flex"><span className="zine-label">01:24</span><div className="h-1 w-28 bg-foreground/30"><div className="h-full w-1/3 bg-foreground" /></div><span className="zine-label">03:48</span></div><button className="hidden border-l-2 border-foreground pl-4 sm:block" data-testid="button-player-queue"><ListMusic size={19} /></button></div></div>;
+  const player = usePlayer();
+  const radioParams = { limit: 50 };
+  const radio = useListArtists(radioParams, { query: { queryKey: getListArtistsQueryKey(radioParams) } });
+  const radioQueue = useMemo(() => (radio.data ?? []).map(a => a.topTrack).filter(t => t.previewUrl), [radio.data]);
+  const { current, playing, loading, error, currentTime, duration, volume } = player;
+  const onToggle = () => {
+    if (current) player.toggle();
+    else if (radioQueue.length) player.playTrack(radioQueue[0], radioQueue);
+  };
+  const totalLabel = duration > 0 ? formatTime(duration) : current?.duration ?? '00:00';
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  return <div className="fixed bottom-0 left-0 right-0 z-30 border-t-2 border-foreground bg-[#ff3b9d] px-4 py-3 md:left-[252px]"><div className="mx-auto flex max-w-[1400px] items-center gap-4"><button onClick={onToggle} disabled={!current && !radioQueue.length} className="grid h-10 w-10 shrink-0 place-items-center border-2 border-foreground bg-primary hover:bg-card disabled:opacity-50" aria-label={playing ? 'Pause' : 'Play'} data-testid="button-player-toggle">{playing ? <span className="font-bold">Ⅱ</span> : <Play size={16} fill="currentColor" />}</button><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold" data-testid="text-player-title">{current ? current.title : 'Night Shift Radio'}</p>{playing && <span className="music-eq text-foreground"><i /><i /><i /><i /></span>}</div><p className="zine-label truncate opacity-70" data-testid="text-player-subtitle">{error ?? (loading ? 'TUNING IN...' : current ? `${current.artistName} / ${current.genre}` : 'EDM HUB SELECTS / SIGNAL 004')}</p></div><div className="hidden items-center gap-2 sm:flex"><span className="zine-label" data-testid="text-player-time">{formatTime(currentTime)}</span><div className="h-1 w-28 cursor-pointer bg-foreground/30" role="slider" aria-label="Seek" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)} onClick={e => { const r = e.currentTarget.getBoundingClientRect(); player.seek((e.clientX - r.left) / r.width); }}><div className="h-full bg-foreground" style={{ width: `${progress}%` }} /></div><span className="zine-label">{totalLabel}</span></div><input type="range" min={0} max={1} step={0.05} value={volume} onChange={e => player.setVolume(Number(e.target.value))} className="hidden w-20 accent-black md:block" aria-label="Volume" data-testid="input-player-volume" /><button className="hidden border-l-2 border-foreground pl-4 sm:block" data-testid="button-player-queue"><ListMusic size={19} /></button></div></div>;
 }
 
 function PageFrame({ eyebrow, title, intro, children, accent = '#c7ff23' }: { eyebrow: string; title: string; intro?: string; children: ReactNode; accent?: string }) {
@@ -109,12 +137,12 @@ function StatTile({ label, value, detail, color = '#c7ff23' }: { label: string; 
 }
 
 function ArtistCard({ artist, onFavorite, onOpen }: { artist: Artist; onFavorite: (artist: Artist) => void; onOpen: (artist: Artist) => void }) {
-  return <article className="group ink-border hover-lift relative overflow-hidden bg-card" data-testid={`card-artist-${artist.id}`}><button onClick={() => onFavorite(artist)} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center border-2 border-foreground bg-background hover:bg-primary" aria-label={`${artist.isFavorite ? 'Remove' : 'Save'} ${artist.name}`} data-testid={`button-favorite-${artist.id}`}><Heart size={17} fill={artist.isFavorite ? 'currentColor' : 'none'} /></button><button onClick={() => onOpen(artist)} className="block w-full text-left" data-testid={`button-open-artist-${artist.id}`}><div className="relative h-56 overflow-hidden" style={{ backgroundColor: artist.accent || '#c7ff23' }}><img src={artist.imageUrl} alt={artist.name} className="h-full w-full object-cover mix-blend-multiply grayscale-[.2] transition duration-500 group-hover:scale-105 group-hover:mix-blend-normal" /><span className="absolute bottom-3 left-3 border-2 border-foreground bg-primary px-2 py-1 text-[10px] font-bold uppercase">{artist.genres?.[0] || 'Electronic'}</span></div><div className="p-4"><h3 className="display text-2xl">{artist.name}</h3><p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{artist.bio}</p><div className="mt-4 flex items-center justify-between border-t border-foreground/20 pt-3"><span className="zine-label">{artist.followers} followers</span><ChevronRight size={16} /></div></div></button></article>;
+  return <article className="group ink-border hover-lift relative overflow-hidden bg-card" data-testid={`card-artist-${artist.id}`}><button onClick={() => onFavorite(artist)} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center border-2 border-foreground bg-background hover:bg-primary" aria-label={`${artist.isFavorite ? 'Remove' : 'Save'} ${artist.name}`} data-testid={`button-favorite-${artist.id}`}><Heart size={17} fill={artist.isFavorite ? 'currentColor' : 'none'} /></button><TrackPlayButton track={artist.topTrack} className="absolute right-3 top-[188px] z-10 h-9 w-9" size={15} /><button onClick={() => onOpen(artist)} className="block w-full text-left" data-testid={`button-open-artist-${artist.id}`}><div className="relative h-56 overflow-hidden" style={{ backgroundColor: artist.accent || '#c7ff23' }}><img src={artist.imageUrl} alt={artist.name} className="h-full w-full object-cover mix-blend-multiply grayscale-[.2] transition duration-500 group-hover:scale-105 group-hover:mix-blend-normal" /><span className="absolute bottom-3 left-3 border-2 border-foreground bg-primary px-2 py-1 text-[10px] font-bold uppercase">{artist.genres?.[0] || 'Electronic'}</span></div><div className="p-4"><h3 className="display text-2xl">{artist.name}</h3><p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{artist.bio}</p><div className="mt-4 flex items-center justify-between border-t border-foreground/20 pt-3"><span className="zine-label">{artist.followers} followers</span><ChevronRight size={16} /></div></div></button></article>;
 }
 
 function ArtistDrawer({ artistId, onClose }: { artistId: string; onClose: () => void }) {
   const { data, isLoading, isError, refetch } = useGetArtist(artistId, { query: { queryKey: getGetArtistQueryKey(artistId) } });
-  return <div className="fixed inset-0 z-50 flex justify-end bg-foreground/40" onClick={onClose}><section className="h-full w-full max-w-xl overflow-y-auto border-l-2 border-foreground bg-background p-6 md:p-9" onClick={e => e.stopPropagation()}><button onClick={onClose} className="mb-8 ml-auto grid h-10 w-10 place-items-center border-2 border-foreground bg-primary" data-testid="button-close-artist"><X /></button>{isLoading && <LoadingBlock label="Pulling the artist file..." />}{isError && <QueryError onRetry={() => refetch()} />}{data && <><p className="zine-label">Artist file / {data.genres?.join(' · ')}</p><h2 className="display mt-3 text-6xl">{data.name}</h2><img src={data.imageUrl} alt={data.name} className="mt-7 h-64 w-full object-cover ink-border" /><p className="mt-6 text-base leading-7">{data.bio}</p><div className="mt-8 flex items-center gap-3"><span className="border-2 border-foreground bg-[#16d9d2] px-3 py-2 font-bold">{data.followers}</span><span className="zine-label">listeners in the wild</span></div><h3 className="display mt-12 text-3xl">Top tracks</h3><div className="mt-4 divide-y-2 divide-foreground border-y-2 border-foreground">{data.topTracks?.map((track, i) => <div key={track.id} className="flex items-center gap-3 py-4"><span className="zine-label w-6">0{i + 1}</span><div className="h-10 w-10" style={{ background: track.color }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{track.title}</p><p className="zine-label text-muted-foreground">{track.genre} / {track.releaseYear}</p></div><span className="zine-label">{track.duration}</span></div>)}</div></>}</section></div>;
+  return <div className="fixed inset-0 z-50 flex justify-end bg-foreground/40" onClick={onClose}><section className="h-full w-full max-w-xl overflow-y-auto border-l-2 border-foreground bg-background p-6 md:p-9" onClick={e => e.stopPropagation()}><button onClick={onClose} className="mb-8 ml-auto grid h-10 w-10 place-items-center border-2 border-foreground bg-primary" data-testid="button-close-artist"><X /></button>{isLoading && <LoadingBlock label="Pulling the artist file..." />}{isError && <QueryError onRetry={() => refetch()} />}{data && <><p className="zine-label">Artist file / {data.genres?.join(' · ')}</p><h2 className="display mt-3 text-6xl">{data.name}</h2><img src={data.imageUrl} alt={data.name} className="mt-7 h-64 w-full object-cover ink-border" /><p className="mt-6 text-base leading-7">{data.bio}</p><div className="mt-8 flex items-center gap-3"><span className="border-2 border-foreground bg-[#16d9d2] px-3 py-2 font-bold">{data.followers}</span><span className="zine-label">listeners in the wild</span></div><h3 className="display mt-12 text-3xl">Top tracks</h3><div className="mt-4 divide-y-2 divide-foreground border-y-2 border-foreground">{data.topTracks?.map((track, i) => <div key={track.id} className="flex items-center gap-3 py-4"><span className="zine-label w-6">0{i + 1}</span><div className="h-10 w-10" style={{ background: track.color }} /><div className="min-w-0 flex-1"><p className="truncate font-bold">{track.title}</p><p className="zine-label text-muted-foreground">{track.genre} / {track.releaseYear}</p></div><span className="zine-label">{track.duration}</span><TrackPlayButton track={track} queue={data.topTracks} className="h-9 w-9" size={14} /></div>)}</div></>}</section></div>;
 }
 
 function Overview() {
@@ -191,7 +219,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><TooltipProvider><Shell><Router /></Shell><Toaster /></TooltipProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><PlayerProvider><TooltipProvider><Shell><Router /></Shell><Toaster /></TooltipProvider></PlayerProvider></QueryClientProvider>;
 }
 
 export default App;

@@ -1,27 +1,34 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select, func, desc
-from app.db.session import get_session
-from app.db.models import Artist, Track, Favorite, GameSession, GameRound
-from app.core.config import settings
-from app.lib.scoring import calculate_points
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlmodel import Session, col, select
+
+from app.core.config import settings
+from app.db.models import Favorite, GameRound, GameSession
+from app.db.session import get_session
+from app.lib.edm_data import (
+    API_ARTISTS,
+    API_TRACKS,
+    GENRES,
+    get_artist as find_artist,
+    question_for_round,
+)
+from app.lib.scoring import calculate_points
 
 router = APIRouter()
+USER_ID = settings.DEMO_USER_ID
 
-# --- Schemas ---
 
-class SystemStatus(BaseModel):
-    database: str
-    spotify: bool
+# --- Response / request schemas (mirror lib/api-spec/openapi.yaml) ---
 
-class GenreResponse(BaseModel):
+class Genre(BaseModel):
     id: str
     name: str
     count: int
 
-class TrackSchema(BaseModel):
+
+class Track(BaseModel):
     id: str
     title: str
     artistName: str
@@ -31,7 +38,8 @@ class TrackSchema(BaseModel):
     color: str
     previewUrl: Optional[str] = None
 
-class ArtistSchema(BaseModel):
+
+class Artist(BaseModel):
     id: str
     name: str
     imageUrl: str
@@ -39,373 +47,388 @@ class ArtistSchema(BaseModel):
     genres: List[str]
     followers: str
     accent: str
-    topTrack: TrackSchema
-    isFavorite: Optional[bool] = False
+    topTrack: Track
+    isFavorite: Optional[bool] = None
+
+
+class ArtistDetail(Artist):
+    topTracks: List[Track]
+    similarArtists: List[Artist]
+
+
+class FavoriteState(BaseModel):
+    artistId: str
+    isFavorite: bool
+
 
 class GameStartInput(BaseModel):
-    difficulty: str = Field(..., pattern="^(easy|medium|hard)$")
-    rounds: int = Field(..., ge=1, le=20)
+    difficulty: Literal["easy", "medium", "hard"]
+    rounds: Literal[5, 10, 20]
+    genre: Optional[str] = None
+    era: Optional[str] = None
 
-class GameSessionResponse(BaseModel):
+
+class GameOption(BaseModel):
     id: str
-    userId: str
-    difficulty: str
-    rounds: int
-    currentRound: int
-    score: int
-    streak: int
-    completed: bool
-    startedAt: str
+    title: str
+    artistName: str
+
 
 class GameQuestion(BaseModel):
     id: str
     clipLabel: str
     genre: str
     releaseYear: int
-    options: List[Dict[str, str]]
+    options: List[GameOption]
     correctOptionId: str
-    track: TrackSchema
+    track: Optional[Track] = None
+
+
+class GameSessionOut(BaseModel):
+    id: str
+    difficulty: str
+    rounds: int
+    currentRound: int
+    score: int
+    streak: int
+    question: GameQuestion
+    completed: bool
+
 
 class GameAnswerInput(BaseModel):
-    sessionId: str
+    questionId: str
     optionId: str
     responseTimeMs: int
     hintsUsed: int
 
+
 class GameAnswerResult(BaseModel):
-    isCorrect: bool
-    pointsEarned: int
-    nextStreak: int
+    correct: bool
     correctOptionId: str
-    track: TrackSchema
+    pointsEarned: int
+    totalScore: int
+    streak: int
+    completed: bool
     nextQuestion: Optional[GameQuestion] = None
 
-class DashboardStats(BaseModel):
-    accuracy: float
-    points: int
-    genreBreakdown: List[Dict[str, Any]]
-    accuracyTrend: List[Dict[str, Any]]
-    favoriteArtists: List[ArtistSchema]
-    achievements: List[Dict[str, Any]]
 
-class LeaderboardEntry(BaseModel):
-    rank: int
-    userId: str
-    userName: str
-    score: int
+class SystemStatus(BaseModel):
+    database: str
+    spotify: bool
+
+
+# --- Helpers ---
+
+def get_favorite_ids(session: Session) -> set:
+    rows = session.exec(
+        select(Favorite.artist_id).where(Favorite.user_id == USER_ID)
+    ).all()
+    return set(rows)
+
+
+def with_favorite_state(artists: List[Dict[str, Any]], favorite_ids: set) -> List[Dict[str, Any]]:
+    return [{**a, "isFavorite": a["id"] in favorite_ids} for a in artists]
+
+
+def session_out(game: GameSession) -> GameSessionOut:
+    return GameSessionOut(
+        id=game.id,
+        difficulty=game.difficulty,
+        rounds=game.rounds,
+        currentRound=game.current_round,
+        score=game.score,
+        streak=game.streak,
+        question=question_for_round(game.current_round),
+        completed=game.completed,
+    )
+
+
+def not_found(message: str) -> HTTPException:
+    return HTTPException(status_code=404, detail=message)
+
 
 # --- Endpoints ---
 
 @router.get("/system/status", response_model=SystemStatus)
-def get_system_status(session: Session = Depends(get_session)):
+def get_system_status():
     from app.lib.spotify_client import spotify_client
-    return SystemStatus(
-        database="connected",
-        spotify=spotify_client.is_available()
-    )
+    return SystemStatus(database="connected", spotify=spotify_client.is_available())
 
-@router.get("/genres", response_model=List[GenreResponse])
-def get_genres(session: Session = Depends(get_session)):
-    # In the original, this was static data. We'll replicate that.
-    from app.lib.edm_data import GENRES
+
+@router.get("/genres", response_model=List[Genre])
+def list_genres():
     return GENRES
 
-@router.get("/artists", response_model=List[ArtistSchema])
-def get_artists(search: Optional[str] = None, genre: Optional[str] = None, session: Session = Depends(get_session)):
-    query = select(Artist)
-    if search:
-        query = query.where(Artist.name.ilike(f"%{search}%"))
-    if genre:
-        # Artist.genres is stored as JSON list in PG
-        query = query.where(Artist.genres.contains([genre]))
 
-    artists = session.exec(query).all()
+@router.get("/artists", response_model=List[Artist])
+def list_artists(
+    genre: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = Query(12, ge=1, le=50),
+    session: Session = Depends(get_session),
+):
+    norm_search = search.strip().lower() if search else ""
+    norm_genre = genre.strip().lower() if genre else ""
 
-    results = []
-    for artist in artists:
-        # Get top track (first track in DB for that artist)
-        track = session.exec(select(Track).where(Track.artist_id == artist.id).limit(1)).first()
-        if not track: continue
+    def matches(artist: Dict[str, Any]) -> bool:
+        genre_ok = not norm_genre or any(g.lower() == norm_genre for g in artist["genres"])
+        search_ok = (
+            not norm_search
+            or norm_search in artist["name"].lower()
+            or norm_search in artist["bio"].lower()
+        )
+        return genre_ok and search_ok
 
-        is_fav = session.exec(select(Favorite).where(Favorite.user_id == settings.DEMO_USER_ID, Favorite.artist_id == artist.id)).first() is not None
+    filtered = [a for a in API_ARTISTS if matches(a)]
+    return with_favorite_state(filtered[:limit], get_favorite_ids(session))
 
-        results.append(ArtistSchema(
-            id=artist.id,
-            name=artist.name,
-            imageUrl=artist.image_url,
-            bio=artist.bio,
-            genres=artist.genres,
-            followers=artist.followers,
-            accent=artist.accent,
-            isFavorite=is_fav,
-            topTrack=TrackSchema(
-                id=track.id,
-                title=track.title,
-                artistName=artist.name,
-                genre=track.genre,
-                releaseYear=track.release_year,
-                duration=track.duration,
-                color=track.color,
-                previewUrl=track.preview_url
-            )
-        ))
-    return results
 
-@router.get("/artists/{artist_id}", response_model=ArtistSchema)
+@router.get("/artists/{artist_id}", response_model=ArtistDetail)
 def get_artist(artist_id: str, session: Session = Depends(get_session)):
-    artist = session.get(Artist, artist_id)
+    artist = find_artist(artist_id)
     if not artist:
-        raise HTTPException(status_code=404, detail="Artist not found")
+        raise not_found("Artist not found")
 
-    track = session.exec(select(Track).where(Track.artist_id == artist.id).limit(1)).first()
-    if not track:
-        raise HTTPException(status_code=404, detail="Track not found for artist")
+    favorite_ids = get_favorite_ids(session)
+    top_tracks = [t for t in API_TRACKS if t["artistName"] == artist["name"]]
+    similar = [
+        c for c in API_ARTISTS
+        if c["id"] != artist["id"] and any(g in artist["genres"] for g in c["genres"])
+    ][:3]
 
-    is_fav = session.exec(select(Favorite).where(Favorite.user_id == settings.DEMO_USER_ID, Favorite.artist_id == artist.id)).first() is not None
+    return {
+        **artist,
+        "isFavorite": artist["id"] in favorite_ids,
+        "topTracks": top_tracks,
+        "similarArtists": with_favorite_state(similar, favorite_ids),
+    }
 
-    return ArtistSchema(
-        id=artist.id,
-        name=artist.name,
-        imageUrl=artist.image_url,
-        bio=artist.bio,
-        genres=artist.genres,
-        followers=artist.followers,
-        accent=artist.accent,
-        isFavorite=is_fav,
-        topTrack=TrackSchema(
-            id=track.id,
-            title=track.title,
-            artistName=artist.name,
-            genre=track.genre,
-            releaseYear=track.release_year,
-            duration=track.duration,
-            color=track.color,
-            previewUrl=track.preview_url
-        )
+
+@router.get("/recommendations", response_model=List[Artist])
+def get_recommendations(genres: Optional[str] = None, session: Session = Depends(get_session)):
+    selected = [g.strip().lower() for g in (genres or "House,Garage").split(",") if g.strip()]
+    favorite_ids = get_favorite_ids(session)
+    ranked = sorted(
+        API_ARTISTS,
+        key=lambda a: sum(1 for g in a["genres"] if g.lower() in selected),
+        reverse=True,
     )
+    return with_favorite_state(ranked, favorite_ids)
 
-@router.post("/artists/{artist_id}/favorite")
-def toggle_favorite(artist_id: str, session: Session = Depends(get_session)):
-    fav = session.exec(select(Favorite).where(Favorite.user_id == settings.DEMO_USER_ID, Favorite.artist_id == artist_id)).first()
 
-    if fav:
-        session.delete(fav)
-        session.commit()
-        return {"isFavorite": False}
+@router.post("/favorites/artists/{artist_id}", response_model=FavoriteState)
+def toggle_artist_favorite(artist_id: str, session: Session = Depends(get_session)):
+    if not find_artist(artist_id):
+        raise not_found("Artist not found")
+
+    existing = session.exec(
+        select(Favorite).where(Favorite.user_id == USER_ID, Favorite.artist_id == artist_id)
+    ).first()
+
+    if existing:
+        session.delete(existing)
+        is_favorite = False
     else:
-        new_fav = Favorite(
-            id=f"fav-{settings.DEMO_USER_ID}-{artist_id}",
-            user_id=settings.DEMO_USER_ID,
-            artist_id=artist_id
-        )
-        session.add(new_fav)
-        session.commit()
-        return {"isFavorite": True}
+        session.add(Favorite(user_id=USER_ID, artist_id=artist_id))
+        is_favorite = True
+    session.commit()
+    return FavoriteState(artistId=artist_id, isFavorite=is_favorite)
 
-@router.get("/recommendations", response_model=List[ArtistSchema])
-def get_recommendations(session: Session = Depends(get_session)):
-    # Simplified recommendation: random artists that are not favorites
-    favs = session.exec(select(Favorite.artist_id).where(Favorite.user_id == settings.DEMO_USER_ID)).all()
-    fav_ids = [f.artist_id for f in favs]
 
-    query = select(Artist).where(~Artist.id.in_(fav_ids))
-    artists = session.exec(query).all()
-
-    # Return top 5
-    results = []
-    for artist in artists[:5]:
-        track = session.exec(select(Track).where(Track.artist_id == artist.id).limit(1)).first()
-        if not track: continue
-
-        results.append(ArtistSchema(
-            id=artist.id,
-            name=artist.name,
-            imageUrl=artist.image_url,
-            bio=artist.bio,
-            genres=artist.genres,
-            followers=artist.followers,
-            accent=artist.accent,
-            isFavorite=False,
-            topTrack=TrackSchema(
-                id=track.id,
-                title=track.title,
-                artistName=artist.name,
-                genre=track.genre,
-                releaseYear=track.release_year,
-                duration=track.duration,
-                color=track.color,
-                previewUrl=track.preview_url
-            )
-        ))
-    return results
-
-# --- Game Logic ---
-
-def generate_question(round_num: int, session: Session) -> GameQuestion:
-    # Replicate the logic from questionForRound in edm-data.ts
-    all_tracks = session.exec(select(Track)).all()
-    if not all_tracks:
-        raise HTTPException(status_code=500, detail="No tracks available")
-
-    correct = all_tracks[(round_num - 1) % len(all_tracks)]
-
-    # Generate 4 options
-    options_indices = [(round_num - 1 + offset * 2) % len(all_tracks) for offset in range(4)]
-    options_tracks = [all_tracks[i] for i in options_indices]
-
-    if not any(t.id == correct.id for t in options_tracks):
-        options_tracks[0] = correct
-
-    return GameQuestion(
-        id=f"question-{round_num}",
-        clipLabel=f"CLIP 0{round_num} / 01:00",
-        genre=correct.genre,
-        releaseYear=correct.release_year,
-        options=[{"id": t.id, "title": t.title, "artistName": t.artist.name} for t in options_tracks],
-        correctOptionId=correct.id,
-        track=TrackSchema(
-            id=correct.id,
-            title=correct.title,
-            artistName=correct.artist.name,
-            genre=correct.genre,
-            releaseYear=correct.release_year,
-            duration=correct.duration,
-            color=correct.color,
-            previewUrl=correct.preview_url
-        )
-    )
-
-@router.post("/game/start", response_model=GameSessionResponse)
+@router.post("/game/sessions", response_model=GameSessionOut, status_code=201)
 def start_game(data: GameStartInput, session: Session = Depends(get_session)):
-    game_id = f"game-{settings.DEMO_USER_ID}-{datetime.utcnow().timestamp()}"
-    new_session = GameSession(
-        id=game_id,
-        user_id=settings.DEMO_USER_ID,
+    import uuid
+
+    game = GameSession(
+        id=str(uuid.uuid4()),
+        user_id=USER_ID,
         difficulty=data.difficulty,
         rounds=data.rounds,
         current_round=1,
         score=0,
         streak=0,
         completed=False,
-        started_at=datetime.utcnow()
     )
-    session.add(new_session)
+    session.add(game)
     session.commit()
+    session.refresh(game)
+    return session_out(game)
 
-    return GameSessionResponse(
-        id=new_session.id,
-        userId=new_session.user_id,
-        difficulty=new_session.difficulty,
-        rounds=new_session.rounds,
-        currentRound=new_session.current_round,
-        score=new_session.score,
-        streak=new_session.streak,
-        completed=new_session.completed,
-        startedAt=new_session.started_at.isoformat()
-    )
 
-@router.get("/game/session/{session_id}", response_model=Dict[str, Any])
+@router.get("/game/sessions/{session_id}", response_model=GameSessionOut)
 def get_game_session(session_id: str, session: Session = Depends(get_session)):
     game = session.get(GameSession, session_id)
     if not game:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise not_found("Game session not found")
+    return session_out(game)
 
-    return {
-        "session": GameSessionResponse(
-            id=game.id,
-            userId=game.user_id,
-            difficulty=game.difficulty,
-            rounds=game.rounds,
-            currentRound=game.current_round,
-            score=game.score,
-            streak=game.streak,
-            completed=game.completed,
-            startedAt=game.started_at.isoformat()
-        ),
-        "question": generate_question(game.current_round, session)
-    }
 
-@router.post("/game/answer", response_model=GameAnswerResult)
-def answer_game(data: GameAnswerInput, session: Session = Depends(get_session)):
-    game = session.get(GameSession, data.sessionId)
+@router.post("/game/sessions/{session_id}/answers", response_model=GameAnswerResult)
+def answer_game_question(
+    session_id: str, data: GameAnswerInput, session: Session = Depends(get_session)
+):
+    game = session.get(GameSession, session_id)
     if not game:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise not_found("Game session not found")
 
-    # Get the track for the current round
-    # In a real system, we'd store the questionId in the session.
-    # For this replication, we use the same logic as generate_question.
-    all_tracks = session.exec(select(Track)).all()
-    correct_track = all_tracks[(game.current_round - 1) % len(all_tracks)]
-
+    question = question_for_round(game.current_round)
+    correct = data.optionId == question["correctOptionId"]
     points, next_streak = calculate_points(
-        game,
-        data.optionId,
-        correct_track.id,
-        data.responseTimeMs,
-        data.hintsUsed
+        game.difficulty, game.streak, correct, data.responseTimeMs, data.hintsUsed
     )
+    completed = game.current_round >= game.rounds
+    next_round = game.current_round if completed else game.current_round + 1
+    new_score = game.score + points
 
-    # Record the round
-    round_record = GameRound(
-        id=f"round-{game.id}-{game.current_round}",
+    session.add(GameRound(
         session_id=game.id,
-        question_id=f"question-{game.current_round}",
-        track_id=correct_track.id,
+        question_id=question["id"],
+        track_id=question["track"]["id"],
         selected_option_id=data.optionId,
-        is_correct=points > 0,
+        is_correct=correct,
         response_time_ms=data.responseTimeMs,
-        hints_used=data.hintsUsed
-    )
-    session.add(round_record)
-
-    # Update session
-    game.score += points
+        hints_used=data.hintsUsed,
+    ))
+    game.current_round = next_round
+    game.score = new_score
     game.streak = next_streak
-    game.current_round += 1
-    if game.current_round > game.rounds:
-        game.completed = True
-
+    game.completed = completed
+    session.add(game)
     session.commit()
 
-    # Prepare result
-    result = GameAnswerResult(
-        isCorrect=points > 0,
+    return GameAnswerResult(
+        correct=correct,
+        correctOptionId=question["correctOptionId"],
         pointsEarned=points,
-        nextStreak=next_streak,
-        correctOptionId=correct_track.id,
-        track=TrackSchema(
-            id=correct_track.id,
-            title=correct_track.title,
-            artistName=correct_track.artist.name,
-            genre=correct_track.genre,
-            releaseYear=correct_track.release_year,
-            duration=correct_track.duration,
-            color=correct_track.color,
-            previewUrl=correct_track.preview_url
-        )
+        totalScore=new_score,
+        streak=next_streak,
+        completed=completed,
+        nextQuestion=None if completed else question_for_round(next_round),
     )
 
-    if not game.completed:
-        result.nextQuestion = generate_question(game.current_round, session)
 
-    return result
-
-@router.get("/dashboard", response_model=DashboardStats)
+@router.get("/dashboard")
 def get_dashboard(session: Session = Depends(get_session)):
-    # Mocked responses as in original
-    return DashboardStats(
-        accuracy=0.85,
-        points=1250,
-        genreBreakdown=[{"genre": "House", "count": 12}, {"genre": "Techno", "count": 8}],
-        accuracyTrend=[{"date": "2024-01-01", "value": 0.7}, {"date": "2024-01-02", "value": 0.8}],
-        favoriteArtists=[],
-        achievements=[{"id": "first-win", "name": "First Win", "unlocked": True}]
+    favorite_ids = get_favorite_ids(session)
+    sessions = session.exec(
+        select(GameSession)
+        .where(GameSession.user_id == USER_ID)
+        .order_by(col(GameSession.started_at))
+    ).all()
+    completed = [s for s in sessions if s.completed]
+    extra_points = sum(s.score for s in completed)
+    favorite_artists = with_favorite_state(
+        [a for a in API_ARTISTS if a["id"] in favorite_ids], favorite_ids
     )
+    games_played = max(12, len(sessions))
 
-@router.get("/leaderboard", response_model=List[LeaderboardEntry])
-def get_leaderboard(session: Session = Depends(get_session)):
-    # Mocked responses as in original
+    return {
+        "profile": {
+            "username": "JAMIE D.",
+            "initials": "JD",
+            "bio": "Collecting the sounds between midnight and sunrise.",
+            "memberSince": "March 2024",
+        },
+        "stats": {
+            "gamesPlayed": games_played,
+            "accuracy": 86,
+            "totalPoints": 1840 + extra_points,
+            "currentStreak": completed[-1].streak if completed else 7,
+            "bestStreak": 18,
+            "artistOfWeek": "Fred again..",
+            "favoriteGenre": "House",
+            "hottestTrack": "places to be",
+        },
+        "genreBreakdown": [
+            {"genre": "House", "value": 42, "color": "#D6FF00"},
+            {"genre": "Techno", "value": 24, "color": "#FF3C8B"},
+            {"genre": "Garage", "value": 18, "color": "#19D3D1"},
+            {"genre": "Ambient", "value": 10, "color": "#9B8CFF"},
+            {"genre": "Other", "value": 6, "color": "#FF8A1F"},
+        ],
+        "accuracyTrend": [
+            {"day": "MON", "accuracy": 71},
+            {"day": "TUE", "accuracy": 79},
+            {"day": "WED", "accuracy": 74},
+            {"day": "THU", "accuracy": 88},
+            {"day": "FRI", "accuracy": 82},
+            {"day": "SAT", "accuracy": 91},
+            {"day": "SUN", "accuracy": 86},
+        ],
+        "favoriteArtists": favorite_artists,
+        "achievements": [
+            {
+                "id": "first-steps",
+                "name": "First Steps",
+                "description": "Play your first game",
+                "progress": 1,
+                "target": 1,
+                "unlocked": True,
+                "unlockedAt": "2024-03-12T21:30:00.000Z",
+            },
+            {
+                "id": "century-club",
+                "name": "Century Club",
+                "description": "Score 100+ points in one session",
+                "progress": 84,
+                "target": 100,
+                "unlocked": False,
+                "unlockedAt": None,
+            },
+            {
+                "id": "genre-master",
+                "name": "House Head",
+                "description": "Get 10 correct answers in House",
+                "progress": 8,
+                "target": 10,
+                "unlocked": False,
+                "unlockedAt": None,
+            },
+            {
+                "id": "dedicated-fan",
+                "name": "Dedicated Fan",
+                "description": "Play 30 games total",
+                "progress": min(30, games_played),
+                "target": 30,
+                "unlocked": False,
+                "unlockedAt": None,
+            },
+        ],
+    }
+
+
+@router.get("/activity")
+def list_activity():
     return [
-        LeaderboardEntry(rank=1, userId="user-1", userName="DJ Legend", score=5000),
-        LeaderboardEntry(rank=2, userId="user-2", userName="Bass Master", score=4200),
+        {"id": "activity-1", "kind": "game", "title": "Game complete",
+         "detail": "82 points · 4/5 correct", "timestamp": "18 MIN AGO", "accent": "#D6FF00"},
+        {"id": "activity-2", "kind": "artist", "title": "New crate find",
+         "detail": "You discovered Overmono", "timestamp": "YESTERDAY", "accent": "#FF3C8B"},
+        {"id": "activity-3", "kind": "achievement", "title": "Streak extended",
+         "detail": "7 correct answers in a row", "timestamp": "2 DAYS AGO", "accent": "#19D3D1"},
+        {"id": "activity-4", "kind": "game", "title": "Game complete",
+         "detail": "105 points · 5/5 correct", "timestamp": "4 DAYS AGO", "accent": "#FF8A1F"},
+        {"id": "activity-5", "kind": "artist", "title": "Favorite added",
+         "detail": "Charlotte de Witte", "timestamp": "LAST WEEK", "accent": "#9B8CFF"},
     ]
+
+
+@router.get("/leaderboard")
+def get_leaderboard():
+    def entry(rank, username, initials, score, accuracy, games, accent, me=False):
+        return {
+            "rank": rank, "username": username, "initials": initials, "score": score,
+            "accuracy": accuracy, "games": games, "accent": accent, "isCurrentUser": me,
+        }
+
+    return {
+        "entries": [
+            entry(1, "MAYA K.", "MK", 4210, 94, 38, "#D6FF00"),
+            entry(2, "DODGER", "DO", 3892, 91, 31, "#FF3C8B"),
+            entry(3, "K-BOY", "KB", 3674, 89, 29, "#19D3D1"),
+            entry(4, "JAMIE D.", "JD", 1840, 86, 12, "#FF8A1F", True),
+            entry(5, "OLI M.", "OM", 1722, 84, 17, "#9B8CFF"),
+        ],
+        "currentUserRank": 4,
+        "totalPlayers": 184,
+    }

@@ -2,7 +2,7 @@
 
 **EDM Hub is a neon-brutalist discovery playground for electronic dance music fans. Dig through emerging and iconic artists, test your track knowledge in fast-paced guessing games, save your favorites, and build a personal profile of the sounds that keep you moving.**
 
-The project is a full-stack TypeScript application with a React/Vite frontend, an Express API, PostgreSQL persistence, and generated OpenAPI client types. 
+The project is a full-stack application with a React/Vite frontend (TypeScript), a FastAPI (Python) backend, PostgreSQL persistence, and generated OpenAPI client types. 
 
 <img width="1526" height="787" alt="Screenshot 2026-09-06 at 16 05 23" src="https://github.com/user-attachments/assets/dee8d8ff-da24-4b6a-9b6e-f712100da3c7" />
 
@@ -23,10 +23,10 @@ The project is a full-stack TypeScript application with a React/Vite frontend, a
 The initial catalog is seeded locally in:
 
 ```text
-artifacts/api-server/src/lib/edm-data.ts
+artifacts/api-server-python/app/lib/edm_data.py
 ```
 
-The API inserts this catalog into PostgreSQL on first use. Artist and track discovery currently reads from the seeded TypeScript catalog, while favorites and game activity are persisted in PostgreSQL.
+The API inserts this catalog into PostgreSQL on startup. Artist and track discovery currently reads from the seeded in-memory catalog, while favorites and game activity are persisted in PostgreSQL.
 
 Spotify import/synchronization is not currently enabled. Do not put Spotify credentials in frontend code or commit them to this repository. A future server-side importer should use the Spotify Client Credentials flow and upsert Spotify artist and track IDs into the database.
 
@@ -36,10 +36,10 @@ Spotify import/synchronization is not currently enabled. Do not put Spotify cred
 - pnpm 10
 - React 19
 - Vite 7
-- Express 5
+- Python 3.12+
+- FastAPI + Uvicorn
 - PostgreSQL
-- Drizzle ORM
-- Zod 4
+- SQLModel / SQLAlchemy
 - OpenAPI and generated React Query hooks
 - Tailwind CSS 4
 - Framer Motion
@@ -48,15 +48,13 @@ Spotify import/synchronization is not currently enabled. Do not put Spotify cred
 
 ```text
 artifacts/
-  api-server/       Express API server
+  api-server-python/ FastAPI backend
   edm-hub/          React/Vite web application
   mockup-sandbox/   Component preview server
 
 lib/
   api-client-react/ Generated React Query API client
   api-spec/         OpenAPI source specification and code generation
-  api-zod/          Generated server validation schemas
-  db/               Drizzle schema and database client
 
 attached_assets/    Supplied design references and project assets
 ```
@@ -67,6 +65,7 @@ Install the following before starting:
 
 - Node.js 24.x
 - pnpm 10.x
+- Python 3.12 or newer
 - PostgreSQL 14 or newer
 
 Check your versions:
@@ -86,6 +85,10 @@ From the repository root:
 corepack enable
 corepack prepare pnpm@10.26.1 --activate
 pnpm install
+
+python3 -m venv artifacts/api-server-python/.venv
+source artifacts/api-server-python/.venv/bin/activate
+pip install -r artifacts/api-server-python/requirements.txt
 ```
 
 ### 2. Create a PostgreSQL database
@@ -114,29 +117,19 @@ If your local PostgreSQL server does not require a password, use:
 export DATABASE_URL="postgresql://postgres@localhost:5432/edm_hub"
 ```
 
-### 3. Create or update the database tables
+### 3. Start the API server
 
-```bash
-pnpm --filter @workspace/db run push
-```
-
-This creates the EDM Hub tables:
-
-- `edm_artists`
-- `edm_tracks`
-- `edm_favorites`
-- `edm_game_sessions`
-- `edm_game_rounds`
-
-### 4. Start the API server
+The API creates its tables (`edm_artists`, `edm_tracks`, `edm_favorites`, `edm_game_sessions`, `edm_game_rounds`) and seeds the catalog automatically on startup.
 
 Open one terminal and run:
 
 ```bash
+cd artifacts/api-server-python
+source .venv/bin/activate
 export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
 export PORT=8080
 
-pnpm --filter @workspace/api-server run dev
+python -m app.main
 ```
 
 Keep this terminal open.
@@ -147,7 +140,7 @@ Verify the API is running:
 curl http://localhost:8080/api/healthz
 ```
 
-### 5. Start the frontend
+### 4. Start the frontend
 
 Open a second terminal in the repository root:
 
@@ -173,7 +166,8 @@ Use these equivalents instead of `export`:
 ```powershell
 $env:DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
 $env:PORT="8080"
-pnpm --filter @workspace/api-server run dev
+cd artifacts/api-server-python
+python -m app.main
 ```
 
 In a second PowerShell window:
@@ -204,32 +198,21 @@ Build the frontend:
 PORT=18796 BASE_PATH=/ pnpm --filter @workspace/edm-hub run build
 ```
 
-Build the API:
-
-```bash
-pnpm --filter @workspace/api-server run build
-```
-
 Regenerate typed API clients after changing the OpenAPI specification:
 
 ```bash
 pnpm --filter @workspace/api-spec run codegen
 ```
 
-Update the development database after changing the Drizzle schema:
-
-```bash
-pnpm --filter @workspace/db run push
-```
+Database tables are created on API startup from `artifacts/api-server-python/app/db/models.py`.
 
 ## Environment variables
 
 | Variable | Required by | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | API and database tooling | PostgreSQL connection string |
+| `DATABASE_URL` | API | PostgreSQL connection string |
 | `PORT` | API or frontend | Port for the process being started |
 | `BASE_PATH` | Frontend | Vite base path; use `/` for a normal local install |
-| `NODE_ENV` | API | Set automatically by the API `dev` script |
 
 Never commit database credentials, API keys, or client secrets. Use your local shell environment, an ignored `.env` file loaded by your own tooling, or your deployment provider’s secret manager.
 
@@ -248,7 +231,7 @@ Then restart the frontend.
 
 ### `PORT environment variable is required`
 
-The Vite and API configurations intentionally require an explicit port:
+The Vite configuration requires an explicit port, and the API defaults to 8080:
 
 ```bash
 # API
@@ -279,7 +262,7 @@ Confirm that:
 ## Architecture notes
 
 - `lib/api-spec/openapi.yaml` is the source of truth for API contracts.
-- Generated API hooks and validation schemas should be regenerated after OpenAPI changes.
+- Generated API hooks should be regenerated after OpenAPI changes. The FastAPI routes in `app/api/edm.py` must be kept in sync with the spec by hand.
 - The API currently uses a demo user ID (`demo-dj`) because authentication has not yet been added.
 - The current product catalog is seeded data; PostgreSQL persists user-facing game and favorite state.
 - Spotify credentials, when eventually used, must stay in the API process and must never be exposed to the React application.
@@ -321,18 +304,14 @@ Since your project uses a monorepo layout with pnpm workspaces, avoid hosting on
 
 **Platform:** Supabase or Neon
 
-Since you are using PostgreSQL and Drizzle, do not host your own database. Both Supabase and Neon offer free managed Postgres instances.
+Since you are using PostgreSQL, do not host your own database. Both Supabase and Neon offer free managed Postgres instances.
 
 **Steps:**
 
 1. Sign up for **Supabase** or **Neon**
 2. Copy your production connection string
 3. Add it to your environment variables as `DATABASE_URL`
-4. Run your schema migration from your local machine to production:
-
-```bash
-DATABASE_URL="your-production-string" pnpm --filter @workspace/db run push
-```
+4. Tables are created automatically when the API starts, so no separate migration step is needed.
 
 **Key Point:** Use managed database services to eliminate operational overhead and ensure reliability.
 
@@ -342,7 +321,7 @@ DATABASE_URL="your-production-string" pnpm --filter @workspace/db run push
 
 **Platform:** Render or Railway
 
-Your backend is an Express 5 app. Both Render and Railway handle Node.js/pnpm monorepos natively.
+Your backend is a FastAPI app. Both Render and Railway handle Python services natively.
 
 **Steps:**
 
@@ -350,32 +329,26 @@ Your backend is an Express 5 app. Both Render and Railway handle Node.js/pnpm mo
 2. Link your GitHub repository
 3. Configure the build and start commands:
 
+**Root directory:** `artifacts/api-server-python`
+
 **Build Command:**
 
 ```bash
-pnpm run build
-```
-
-Or to build only the API service:
-
-```bash
-pnpm --filter @workspace/api-server run build
+pip install -r requirements.txt
 ```
 
 **Start Command:**
 
 ```bash
-pnpm --filter @workspace/api-server start
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
-
-Adjust the filter to match your actual workspace name.
 
 4. Set environment variables in the platform dashboard:
    - `PORT=8080`
    - `DATABASE_URL` (your production connection string)
    - Any other required API environment variables
 
-**Key Point:** The monorepo structure is fully supported; just ensure your workspace filter references are correct.
+**Key Point:** Set the service root directory to `artifacts/api-server-python`.
 
 ---
 
