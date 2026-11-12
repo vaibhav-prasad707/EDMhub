@@ -5,6 +5,34 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  initials: string;
+  memberSince: string;
+}
+
+export interface SignupInput {
+  /**
+     * @minLength 3
+     * @maxLength 30
+     */
+  username: string;
+  /** @maxLength 254 */
+  email: string;
+  /**
+     * @minLength 8
+     * @maxLength 128
+     */
+  password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -88,8 +116,8 @@ export interface GameQuestion {
   genre: string;
   releaseYear: number;
   options: GameOption[];
-  correctOptionId: string;
-  track?: Track;
+  /** Audio for the clip. The answer is deliberately not part of the question. */
+  clipUrl: string;
 }
 
 export interface GameSession {
@@ -119,8 +147,7 @@ export type GameAnswerResultNextQuestion = {
   genre?: string;
   releaseYear?: number;
   options?: GameOption[];
-  correctOptionId?: string;
-  track?: Track;
+  clipUrl?: string;
 } | null;
 
 export interface GameAnswerResult {

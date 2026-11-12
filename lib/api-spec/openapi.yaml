@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Accounts and sessions
   - name: artists
     description: EDM artist discovery and favorites
   - name: game
@@ -32,6 +34,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/signup:
+    post:
+      operationId: signup
+      tags: [auth]
+      summary: Create an account and sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupInput"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input
+        "409":
+          description: Username or email already taken
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Invalid email or password
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Sign out
+      responses:
+        "204":
+          description: Signed out
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get the signed-in user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not signed in
   /genres:
     get:
       operationId: listGenres
@@ -124,6 +190,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ArtistId"
       responses:
+        "401":
+          description: Not signed in
         "200":
           description: Updated favorite state
           content:
@@ -142,6 +210,10 @@ paths:
             schema:
               $ref: "#/components/schemas/GameStartInput"
       responses:
+        "401":
+          description: Not signed in
+        "400":
+          description: Invalid options, or no playable tracks match the filters
         "201":
           description: Started game session
           content:
@@ -156,6 +228,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/SessionId"
       responses:
+        "401":
+          description: Not signed in
         "200":
           description: Game session
           content:
@@ -178,6 +252,12 @@ paths:
             schema:
               $ref: "#/components/schemas/GameAnswerInput"
       responses:
+        "401":
+          description: Not signed in
+        "404":
+          description: Game session not found
+        "409":
+          description: Game already completed, or the question is no longer active
         "200":
           description: Answer result
           content:
@@ -190,6 +270,8 @@ paths:
       tags: [dashboard]
       summary: Get the current user's dashboard
       responses:
+        "401":
+          description: Not signed in
         "200":
           description: Dashboard data
           content:
@@ -202,6 +284,8 @@ paths:
       tags: [dashboard]
       summary: Get recent user activity
       responses:
+        "401":
+          description: Not signed in
         "200":
           description: Recent activity
           content:
@@ -216,6 +300,8 @@ paths:
       tags: [leaderboard]
       summary: Get all-time leaderboard
       responses:
+        "401":
+          description: Not signed in
         "200":
           description: Leaderboard
           content:
@@ -237,6 +323,43 @@ components:
       schema:
         type: string
   schemas:
+    User:
+      type: object
+      required: [id, username, email, initials, memberSince]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        initials:
+          type: string
+        memberSince:
+          type: string
+    SignupInput:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 30
+        email:
+          type: string
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
     HealthStatus:
       type: object
       properties:
@@ -346,7 +469,7 @@ components:
           type: string
     GameQuestion:
       type: object
-      required: [id, clipLabel, genre, releaseYear, options, correctOptionId]
+      required: [id, clipLabel, genre, releaseYear, options, clipUrl]
       properties:
         id:
           type: string
@@ -360,10 +483,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GameOption"
-        correctOptionId:
+        clipUrl:
           type: string
-        track:
-          $ref: "#/components/schemas/Track"
+          description: Audio for the clip. The answer is deliberately not part of the question.
     GameSession:
       type: object
       required: [id, difficulty, rounds, currentRound, score, streak, question, completed]
@@ -427,10 +549,8 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/GameOption"
-            correctOptionId:
+            clipUrl:
               type: string
-            track:
-              $ref: "#/components/schemas/Track"
     Dashboard:
       type: object
       required: [profile, stats, genreBreakdown, accuracyTrend, favoriteArtists, achievements]

@@ -1,23 +1,29 @@
-from typing import Any, Dict, List, Literal, Optional
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
-from app.core.config import settings
-from app.db.models import Favorite, GameRound, GameSession
+from app.api.deps import get_current_user, get_optional_user
+from app.db.models import Artist as DbArtist
+from app.db.models import Favorite, GameQuestionRecord, GameRound, GameSession
+from app.db.models import Track as DbTrack
+from app.db.models import User
+from app.api.auth import user_out
 from app.db.session import get_session
 from app.lib.edm_data import (
     API_ARTISTS,
     API_TRACKS,
     GENRES,
     get_artist as find_artist,
-    question_for_round,
 )
+from app.lib.game import GameSetupError, build_questions
 from app.lib.scoring import calculate_points
+from app.lib.stats import aware, dashboard_stats, leaderboard, recent_activity
 
 router = APIRouter()
-USER_ID = settings.DEMO_USER_ID
 
 
 # --- Response / request schemas (mirror lib/api-spec/openapi.yaml) ---
@@ -80,8 +86,7 @@ class GameQuestion(BaseModel):
     genre: str
     releaseYear: int
     options: List[GameOption]
-    correctOptionId: str
-    track: Optional[Track] = None
+    clipUrl: str
 
 
 class GameSessionOut(BaseModel):
@@ -119,9 +124,11 @@ class SystemStatus(BaseModel):
 
 # --- Helpers ---
 
-def get_favorite_ids(session: Session) -> set:
+def get_favorite_ids(session: Session, user: Optional[User]) -> set:
+    if user is None:
+        return set()
     rows = session.exec(
-        select(Favorite.artist_id).where(Favorite.user_id == USER_ID)
+        select(Favorite.artist_id).where(Favorite.user_id == user.id)
     ).all()
     return set(rows)
 
@@ -130,7 +137,45 @@ def with_favorite_state(artists: List[Dict[str, Any]], favorite_ids: set) -> Lis
     return [{**a, "isFavorite": a["id"] in favorite_ids} for a in artists]
 
 
-def session_out(game: GameSession) -> GameSessionOut:
+def load_catalog(session: Session) -> List[Tuple[DbTrack, DbArtist]]:
+    return list(session.exec(select(DbTrack, DbArtist).join(DbArtist, DbTrack.artist_id == DbArtist.id)).all())
+
+
+def question_out(session: Session, game: GameSession, record: GameQuestionRecord) -> GameQuestion:
+    ids = set(record.option_ids) | {record.track_id}
+    by_id = {
+        t.id: (t, a)
+        for t, a in session.exec(
+            select(DbTrack, DbArtist).join(DbArtist, DbTrack.artist_id == DbArtist.id).where(col(DbTrack.id).in_(ids))
+        ).all()
+    }
+    correct, _ = by_id[record.track_id]
+    return GameQuestion(
+        id=f"question-{record.round_number}",
+        clipLabel=f"CLIP {record.round_number:02d} / {game.rounds:02d}",
+        genre=correct.genre,
+        releaseYear=correct.release_year,
+        options=[
+            GameOption(id=by_id[tid][0].id, title=by_id[tid][0].title, artistName=by_id[tid][1].name)
+            for tid in record.option_ids
+        ],
+        clipUrl=correct.preview_url or "",
+    )
+
+
+def current_question(session: Session, game: GameSession) -> GameQuestionRecord:
+    record = session.exec(
+        select(GameQuestionRecord).where(
+            GameQuestionRecord.session_id == game.id,
+            GameQuestionRecord.round_number == game.current_round,
+        )
+    ).first()
+    if record is None:
+        raise not_found("Game session not found")
+    return record
+
+
+def session_out(session: Session, game: GameSession) -> GameSessionOut:
     return GameSessionOut(
         id=game.id,
         difficulty=game.difficulty,
@@ -138,7 +183,7 @@ def session_out(game: GameSession) -> GameSessionOut:
         currentRound=game.current_round,
         score=game.score,
         streak=game.streak,
-        question=question_for_round(game.current_round),
+        question=question_out(session, game, current_question(session, game)),
         completed=game.completed,
     )
 
@@ -166,6 +211,7 @@ def list_artists(
     search: Optional[str] = None,
     limit: int = Query(12, ge=1, le=50),
     session: Session = Depends(get_session),
+    user: Optional[User] = Depends(get_optional_user),
 ):
     norm_search = search.strip().lower() if search else ""
     norm_genre = genre.strip().lower() if genre else ""
@@ -180,16 +226,20 @@ def list_artists(
         return genre_ok and search_ok
 
     filtered = [a for a in API_ARTISTS if matches(a)]
-    return with_favorite_state(filtered[:limit], get_favorite_ids(session))
+    return with_favorite_state(filtered[:limit], get_favorite_ids(session, user))
 
 
 @router.get("/artists/{artist_id}", response_model=ArtistDetail)
-def get_artist(artist_id: str, session: Session = Depends(get_session)):
+def get_artist(
+    artist_id: str,
+    session: Session = Depends(get_session),
+    user: Optional[User] = Depends(get_optional_user),
+):
     artist = find_artist(artist_id)
     if not artist:
         raise not_found("Artist not found")
 
-    favorite_ids = get_favorite_ids(session)
+    favorite_ids = get_favorite_ids(session, user)
     top_tracks = [t for t in API_TRACKS if t["artistName"] == artist["name"]]
     similar = [
         c for c in API_ARTISTS
@@ -205,9 +255,13 @@ def get_artist(artist_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/recommendations", response_model=List[Artist])
-def get_recommendations(genres: Optional[str] = None, session: Session = Depends(get_session)):
+def get_recommendations(
+    genres: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user: Optional[User] = Depends(get_optional_user),
+):
     selected = [g.strip().lower() for g in (genres or "House,Garage").split(",") if g.strip()]
-    favorite_ids = get_favorite_ids(session)
+    favorite_ids = get_favorite_ids(session, user)
     ranked = sorted(
         API_ARTISTS,
         key=lambda a: sum(1 for g in a["genres"] if g.lower() in selected),
@@ -217,31 +271,43 @@ def get_recommendations(genres: Optional[str] = None, session: Session = Depends
 
 
 @router.post("/favorites/artists/{artist_id}", response_model=FavoriteState)
-def toggle_artist_favorite(artist_id: str, session: Session = Depends(get_session)):
+def toggle_artist_favorite(
+    artist_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     if not find_artist(artist_id):
         raise not_found("Artist not found")
 
     existing = session.exec(
-        select(Favorite).where(Favorite.user_id == USER_ID, Favorite.artist_id == artist_id)
+        select(Favorite).where(Favorite.user_id == user.id, Favorite.artist_id == artist_id)
     ).first()
 
     if existing:
         session.delete(existing)
         is_favorite = False
     else:
-        session.add(Favorite(user_id=USER_ID, artist_id=artist_id))
+        session.add(Favorite(user_id=user.id, artist_id=artist_id))
         is_favorite = True
     session.commit()
     return FavoriteState(artistId=artist_id, isFavorite=is_favorite)
 
 
 @router.post("/game/sessions", response_model=GameSessionOut, status_code=201)
-def start_game(data: GameStartInput, session: Session = Depends(get_session)):
-    import uuid
+def start_game(
+    data: GameStartInput,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    try:
+        plan = build_questions(load_catalog(session), data.rounds, data.genre, data.era)
+    except GameSetupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
+    now = datetime.now(timezone.utc)
     game = GameSession(
         id=str(uuid.uuid4()),
-        user_id=USER_ID,
+        user_id=user.id,
         difficulty=data.difficulty,
         rounds=data.rounds,
         current_round=1,
@@ -250,185 +316,126 @@ def start_game(data: GameStartInput, session: Session = Depends(get_session)):
         completed=False,
     )
     session.add(game)
+    session.flush()
+    for n, (track_id, option_ids) in enumerate(plan, start=1):
+        session.add(GameQuestionRecord(
+            session_id=game.id,
+            round_number=n,
+            track_id=track_id,
+            option_ids=option_ids,
+            asked_at=now if n == 1 else None,
+        ))
     session.commit()
     session.refresh(game)
-    return session_out(game)
+    return session_out(session, game)
 
 
 @router.get("/game/sessions/{session_id}", response_model=GameSessionOut)
-def get_game_session(session_id: str, session: Session = Depends(get_session)):
+def get_game_session(
+    session_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     game = session.get(GameSession, session_id)
-    if not game:
+    if not game or game.user_id != user.id:
         raise not_found("Game session not found")
-    return session_out(game)
+    return session_out(session, game)
 
 
 @router.post("/game/sessions/{session_id}/answers", response_model=GameAnswerResult)
 def answer_game_question(
-    session_id: str, data: GameAnswerInput, session: Session = Depends(get_session)
+    session_id: str,
+    data: GameAnswerInput,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
-    game = session.get(GameSession, session_id)
-    if not game:
+    # Lock the session row so a double-submitted answer can't be scored twice.
+    game = session.exec(
+        select(GameSession).where(GameSession.id == session_id).with_for_update()
+    ).first()
+    if not game or game.user_id != user.id:
         raise not_found("Game session not found")
+    if game.completed:
+        raise HTTPException(status_code=409, detail="Game already completed")
 
-    question = question_for_round(game.current_round)
-    correct = data.optionId == question["correctOptionId"]
+    record = current_question(session, game)
+    if data.questionId != f"question-{record.round_number}":
+        raise HTTPException(status_code=409, detail="That question is no longer active")
+    if data.optionId not in record.option_ids:
+        raise HTTPException(status_code=400, detail="Unknown answer option")
+
+    now = datetime.now(timezone.utc)
+    # Timed on the server from when the question was served, not taken from the client.
+    response_ms = max(0, int((now - aware(record.asked_at)).total_seconds() * 1000))
+    hints_used = max(0, data.hintsUsed)
+
+    correct = data.optionId == record.track_id
     points, next_streak = calculate_points(
-        game.difficulty, game.streak, correct, data.responseTimeMs, data.hintsUsed
+        game.difficulty, game.streak, correct, response_ms, hints_used
     )
     completed = game.current_round >= game.rounds
-    next_round = game.current_round if completed else game.current_round + 1
     new_score = game.score + points
 
     session.add(GameRound(
         session_id=game.id,
-        question_id=question["id"],
-        track_id=question["track"]["id"],
+        question_id=f"question-{record.round_number}",
+        track_id=record.track_id,
         selected_option_id=data.optionId,
         is_correct=correct,
-        response_time_ms=data.responseTimeMs,
-        hints_used=data.hintsUsed,
+        response_time_ms=response_ms,
+        hints_used=hints_used,
     ))
-    game.current_round = next_round
     game.score = new_score
     game.streak = next_streak
     game.completed = completed
+    next_question = None
+    if not completed:
+        game.current_round += 1
+        following = current_question(session, game)
+        following.asked_at = now
+        session.add(following)
+        next_question = question_out(session, game, following)
     session.add(game)
     session.commit()
 
     return GameAnswerResult(
         correct=correct,
-        correctOptionId=question["correctOptionId"],
+        correctOptionId=record.track_id,
         pointsEarned=points,
         totalScore=new_score,
         streak=next_streak,
         completed=completed,
-        nextQuestion=None if completed else question_for_round(next_round),
+        nextQuestion=next_question,
     )
 
 
 @router.get("/dashboard")
-def get_dashboard(session: Session = Depends(get_session)):
-    favorite_ids = get_favorite_ids(session)
-    sessions = session.exec(
-        select(GameSession)
-        .where(GameSession.user_id == USER_ID)
-        .order_by(col(GameSession.started_at))
-    ).all()
-    completed = [s for s in sessions if s.completed]
-    extra_points = sum(s.score for s in completed)
-    favorite_artists = with_favorite_state(
-        [a for a in API_ARTISTS if a["id"] in favorite_ids], favorite_ids
-    )
-    games_played = max(12, len(sessions))
-
+def get_dashboard(
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    profile = user_out(user)
+    favorite_ids = get_favorite_ids(session, user)
+    stats = dashboard_stats(session, user, favorite_ids)
     return {
         "profile": {
-            "username": "JAMIE D.",
-            "initials": "JD",
+            "username": profile.username.upper(),
+            "initials": profile.initials,
             "bio": "Collecting the sounds between midnight and sunrise.",
-            "memberSince": "March 2024",
+            "memberSince": profile.memberSince,
         },
-        "stats": {
-            "gamesPlayed": games_played,
-            "accuracy": 86,
-            "totalPoints": 1840 + extra_points,
-            "currentStreak": completed[-1].streak if completed else 7,
-            "bestStreak": 18,
-            "artistOfWeek": "Fred again..",
-            "favoriteGenre": "House",
-            "hottestTrack": "places to be",
-        },
-        "genreBreakdown": [
-            {"genre": "House", "value": 42, "color": "#D6FF00"},
-            {"genre": "Techno", "value": 24, "color": "#FF3C8B"},
-            {"genre": "Garage", "value": 18, "color": "#19D3D1"},
-            {"genre": "Ambient", "value": 10, "color": "#9B8CFF"},
-            {"genre": "Other", "value": 6, "color": "#FF8A1F"},
-        ],
-        "accuracyTrend": [
-            {"day": "MON", "accuracy": 71},
-            {"day": "TUE", "accuracy": 79},
-            {"day": "WED", "accuracy": 74},
-            {"day": "THU", "accuracy": 88},
-            {"day": "FRI", "accuracy": 82},
-            {"day": "SAT", "accuracy": 91},
-            {"day": "SUN", "accuracy": 86},
-        ],
-        "favoriteArtists": favorite_artists,
-        "achievements": [
-            {
-                "id": "first-steps",
-                "name": "First Steps",
-                "description": "Play your first game",
-                "progress": 1,
-                "target": 1,
-                "unlocked": True,
-                "unlockedAt": "2024-03-12T21:30:00.000Z",
-            },
-            {
-                "id": "century-club",
-                "name": "Century Club",
-                "description": "Score 100+ points in one session",
-                "progress": 84,
-                "target": 100,
-                "unlocked": False,
-                "unlockedAt": None,
-            },
-            {
-                "id": "genre-master",
-                "name": "House Head",
-                "description": "Get 10 correct answers in House",
-                "progress": 8,
-                "target": 10,
-                "unlocked": False,
-                "unlockedAt": None,
-            },
-            {
-                "id": "dedicated-fan",
-                "name": "Dedicated Fan",
-                "description": "Play 30 games total",
-                "progress": min(30, games_played),
-                "target": 30,
-                "unlocked": False,
-                "unlockedAt": None,
-            },
-        ],
+        **stats,
+        "favoriteArtists": with_favorite_state(
+            [a for a in API_ARTISTS if a["id"] in favorite_ids], favorite_ids
+        ),
     }
 
 
 @router.get("/activity")
-def list_activity():
-    return [
-        {"id": "activity-1", "kind": "game", "title": "Game complete",
-         "detail": "82 points · 4/5 correct", "timestamp": "18 MIN AGO", "accent": "#D6FF00"},
-        {"id": "activity-2", "kind": "artist", "title": "New crate find",
-         "detail": "You discovered Overmono", "timestamp": "YESTERDAY", "accent": "#FF3C8B"},
-        {"id": "activity-3", "kind": "achievement", "title": "Streak extended",
-         "detail": "7 correct answers in a row", "timestamp": "2 DAYS AGO", "accent": "#19D3D1"},
-        {"id": "activity-4", "kind": "game", "title": "Game complete",
-         "detail": "105 points · 5/5 correct", "timestamp": "4 DAYS AGO", "accent": "#FF8A1F"},
-        {"id": "activity-5", "kind": "artist", "title": "Favorite added",
-         "detail": "Charlotte de Witte", "timestamp": "LAST WEEK", "accent": "#9B8CFF"},
-    ]
+def list_activity(session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    return recent_activity(session, user)
 
 
 @router.get("/leaderboard")
-def get_leaderboard():
-    def entry(rank, username, initials, score, accuracy, games, accent, me=False):
-        return {
-            "rank": rank, "username": username, "initials": initials, "score": score,
-            "accuracy": accuracy, "games": games, "accent": accent, "isCurrentUser": me,
-        }
-
-    return {
-        "entries": [
-            entry(1, "MAYA K.", "MK", 4210, 94, 38, "#D6FF00"),
-            entry(2, "DODGER", "DO", 3892, 91, 31, "#FF3C8B"),
-            entry(3, "K-BOY", "KB", 3674, 89, 29, "#19D3D1"),
-            entry(4, "JAMIE D.", "JD", 1840, 86, 12, "#FF8A1F", True),
-            entry(5, "OLI M.", "OM", 1722, 84, 17, "#9B8CFF"),
-        ],
-        "currentUserRank": 4,
-        "totalPlayers": 184,
-    }
+def get_leaderboard(session: Session = Depends(get_session), user: User = Depends(get_current_user)):
+    return leaderboard(session, user)

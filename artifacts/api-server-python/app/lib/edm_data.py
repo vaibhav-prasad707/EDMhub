@@ -194,23 +194,3 @@ API_ARTISTS: List[Dict[str, Any]] = [
 
 def get_artist(artist_id: str) -> Optional[Dict[str, Any]]:
     return next((a for a in API_ARTISTS if a["id"] == artist_id), None)
-
-
-def question_for_round(round_num: int) -> Dict[str, Any]:
-    n = len(API_TRACKS)
-    correct = API_TRACKS[(round_num - 1) % n]
-    options = [API_TRACKS[(round_num - 1 + offset * 2) % n] for offset in range(4)]
-    if not any(o["id"] == correct["id"] for o in options):
-        options[0] = correct
-    return {
-        "id": f"question-{round_num}",
-        "clipLabel": f"CLIP 0{round_num} / 01:00",
-        "genre": correct["genre"],
-        "releaseYear": correct["releaseYear"],
-        "options": [
-            {"id": o["id"], "title": o["title"], "artistName": o["artistName"]}
-            for o in options
-        ],
-        "correctOptionId": correct["id"],
-        "track": correct,
-    }

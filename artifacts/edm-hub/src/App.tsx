@@ -1,10 +1,11 @@
-import { type ReactNode, useMemo, useState } from 'react';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   getGetArtistQueryKey,
+  getGetCurrentUserQueryKey,
   getGetDashboardQueryKey,
   getGetGameSessionQueryKey,
   getGetLeaderboardQueryKey,
@@ -16,6 +17,10 @@ import {
   GameStartInputRounds,
   useAnswerGameQuestion,
   useGetArtist,
+  useGetCurrentUser,
+  useLogin,
+  useLogout,
+  useSignup,
   useGetDashboard,
   useGetGameSession,
   useGetLeaderboard,
@@ -31,6 +36,7 @@ import {
   type GameQuestion,
   type GameSession,
   type LeaderboardEntry,
+  type User,
 } from '@workspace/api-client-react';
 import {
   Activity,
@@ -58,8 +64,34 @@ import {
 import { Link, Route, Switch, useLocation } from 'wouter';
 import NotFound from '@/pages/not-found';
 import { PlayerProvider, usePlayer } from '@/lib/player';
+import { useClip } from '@/lib/clip';
 
-const queryClient = new QueryClient();
+function httpStatus(error: unknown): number | undefined {
+  return (error as { status?: number } | null)?.status;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  const data = (error as { data?: { error?: unknown } } | null)?.data;
+  return typeof data?.error === 'string' ? data.error : fallback;
+}
+
+// A 401 from any request other than the session check means the session ended: re-check it,
+// which sends the user back to the sign-in screen.
+const meKey = getGetCurrentUserQueryKey();
+const recheckSession = () => queryClient.invalidateQueries({ queryKey: meKey });
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      if (httpStatus(error) === 401 && query.queryKey[0] !== meKey[0]) recheckSession();
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: error => {
+      // Only when already signed in; a wrong password on the sign-in form is not a lost session.
+      if (httpStatus(error) === 401 && queryClient.getQueryData(meKey)) recheckSession();
+    },
+  }),
+});
 const colors = ['#c7ff23', '#ff3b9d', '#16d9d2', '#ff793f', '#a78bfa'];
 
 function LoadingBlock({ label = 'Tuning the signal...' }: { label?: string }) {
@@ -74,9 +106,58 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
   return <div className="ink-border bg-[#f3e8cf] p-8 text-center" data-testid="status-empty"><Disc3 className="mx-auto mb-4 h-9 w-9" /><p className="zine-label">Nothing in the pile yet</p><h3 className="display mt-3 text-3xl">{title}</h3><p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">{detail}</p></div>;
 }
 
+function AuthPage() {
+  const qc = useQueryClient();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const signup = useSignup();
+  const login = useLogin();
+  const pending = signup.isPending || login.isPending;
+  const finish = (user: User) => { qc.removeQueries({ predicate: q => q.queryKey[0] !== meKey[0] }); qc.setQueryData(meKey, user); };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (pending) return;
+    setError(null);
+    if (mode === 'signup') {
+      signup.mutate({ data: { username, email, password } }, { onSuccess: finish, onError: err => setError(errorMessage(err, 'Could not create your account.')) });
+    } else {
+      login.mutate({ data: { email, password } }, { onSuccess: finish, onError: err => setError(httpStatus(err) === 401 ? 'Wrong email or password.' : errorMessage(err, 'Could not sign you in.')) });
+    }
+  };
+  const field = 'ink-border mt-2 w-full bg-card px-3 py-3 text-sm font-bold outline-none focus:bg-primary/20';
+  return <div className="paper-grain grid min-h-[100dvh] place-items-center bg-background px-5 py-10">
+    <div className="w-full max-w-md">
+      <div className="mb-8 flex items-center gap-3"><span className="grid h-12 w-12 place-items-center border-2 border-foreground bg-primary text-xl font-black"><Music2 /></span><span className="display text-3xl tracking-[-.08em]">EDM HUB<span className="text-primary">.</span></span></div>
+      <form onSubmit={submit} className="ink-border hard-shadow animate-rise bg-[#f3e8cf] p-6 md:p-8" data-testid="form-auth">
+        <p className="zine-label">{mode === 'login' ? 'Back to the booth' : 'New crate digger'}</p>
+        <h1 className="display mt-3 text-5xl">{mode === 'login' ? 'Sign in.' : 'Join up.'}</h1>
+        {mode === 'signup' && <label className="mt-6 block"><span className="zine-label">Username</span><input value={username} onChange={e => setUsername(e.target.value)} required minLength={3} maxLength={30} autoComplete="username" className={field} data-testid="input-username" /></label>}
+        <label className="mt-5 block"><span className="zine-label">Email</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" className={field} data-testid="input-email" /></label>
+        <label className="mt-5 block"><span className="zine-label">Password{mode === 'signup' ? ' (8+ characters)' : ''}</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={mode === 'signup' ? 8 : undefined} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} className={field} data-testid="input-password" /></label>
+        {error && <p className="ink-border mt-5 bg-[#ff793f] px-3 py-2 text-sm font-bold" role="alert" data-testid="text-auth-error">{error}</p>}
+        <button type="submit" disabled={pending} className="ink-border mt-6 w-full bg-primary px-4 py-3 text-sm font-bold hover:bg-card disabled:opacity-60" data-testid="button-auth-submit">{pending ? 'ONE MOMENT...' : mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}</button>
+        <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); }} className="zine-label mt-5 block w-full text-center underline" data-testid="button-auth-switch">{mode === 'login' ? 'No account? Create one' : 'Have an account? Sign in'}</button>
+      </form>
+    </div>
+  </div>;
+}
+
+function AuthGate({ children }: { children: ReactNode }) {
+  const me = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey(), retry: false, staleTime: Infinity } });
+  if (me.isLoading) return <div className="grid min-h-[100dvh] place-items-center bg-background px-5"><div className="w-full max-w-sm"><LoadingBlock /></div></div>;
+  if (me.isError && httpStatus(me.error) === 401) return <AuthPage />;
+  if (me.isError || !me.data) return <div className="grid min-h-[100dvh] place-items-center bg-background px-5"><div className="w-full max-w-sm"><QueryError onRetry={() => me.refetch()} /></div></div>;
+  return <>{children}</>;
+}
+
 function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: user } = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey(), retry: false, staleTime: Infinity } });
+  const logout = useLogout();
   const nav = [
     { href: '/', label: 'Overview', icon: BarChart3 },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -90,7 +171,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="mb-12 flex items-center justify-between"><Link href="/" className="flex items-center gap-3" data-testid="link-logo"><span className="grid h-10 w-10 place-items-center border-2 border-primary bg-primary text-xl font-black text-sidebar"><Music2 /></span><span className="display text-2xl tracking-[-.08em]">EDM<br />HUB<span className="text-primary">.</span></span></Link><button className="md:hidden" onClick={() => setMobileOpen(false)} data-testid="button-close-menu"><X /></button></div>
       <div className="zine-label mb-3 text-primary">Your frequency</div>
       <nav className="space-y-1" aria-label="Main navigation">{nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`flex items-center gap-3 border-2 border-transparent px-3 py-3 text-sm font-bold transition hover:border-primary hover:bg-primary/10 ${location === href ? 'border-primary bg-primary text-sidebar' : ''}`} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={18} strokeWidth={2.3} /><span>{label}</span>{location === href && <ChevronRight className="ml-auto" size={16} />}</Link>)}</nav>
-      <div className="mt-auto border-t border-sidebar-foreground/30 pt-5"><div className="zine-label text-sidebar-foreground/60">Session status</div><div className="mt-3 flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-primary" /> Live crate active</div><div className="mt-5 flex gap-2"><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">V. 02</span><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">SF / 2024</span></div></div>
+      <div className="mt-auto border-t border-sidebar-foreground/30 pt-5"><div className="zine-label text-sidebar-foreground/60">Session status</div><div className="mt-3 flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-primary" /> Live crate active</div>{user && <div className="mt-4 flex items-center justify-between gap-2 border border-sidebar-foreground/40 px-2 py-2"><span className="truncate text-xs font-bold" data-testid="text-current-user">{user.username}</span><button onClick={() => logout.mutate(undefined, { onSettled: () => window.location.assign('/') })} disabled={logout.isPending} className="zine-label shrink-0 text-primary underline" data-testid="button-logout">Sign out</button></div>}<div className="mt-5 flex gap-2"><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">V. 02</span><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">SF / 2024</span></div></div>
     </aside>
     {mobileOpen && <button className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}
     <main className="md:pl-[252px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b-2 border-foreground bg-background/95 px-5 backdrop-blur md:px-9"><button className="md:hidden" onClick={() => setMobileOpen(true)} data-testid="button-open-menu"><Menu /></button><div className="hidden items-center gap-2 md:flex"><span className="zine-label">EDM HUB /</span><span className="text-sm font-bold capitalize">{location === '/' ? 'overview' : location.slice(1)}</span></div><div className="ml-auto flex items-center gap-3"><div className="hidden items-center gap-2 border-2 border-foreground bg-card px-3 py-2 sm:flex"><span className="h-2 w-2 rounded-full bg-[#ff3b9d]" /><span className="zine-label">Broadcasting now</span></div><Link href="/profile" className="grid h-9 w-9 place-items-center border-2 border-foreground bg-primary font-bold" data-testid="link-header-profile">AJ</Link></div></header>{children}</main>
@@ -178,13 +259,24 @@ function Game() {
   const [question, setQuestion] = useState<GameQuestion | null>(null);
   const [hint, setHint] = useState(false);
   const [answered, setAnswered] = useState<{ correct: boolean; correctId: string; points: number } | null>(null);
+  const clip = useClip(12);
+  const player = usePlayer();
+  const shownAt = useRef(Date.now());
   const genres = useListGenres({ query: { queryKey: getListGenresQueryKey() } });
   const sessionQuery = useGetGameSession(sessionId, { query: { enabled: !!sessionId, queryKey: getGetGameSessionQueryKey(sessionId) } });
   const start = useStartGame();
   const answer = useAnswerGameQuestion();
+  useEffect(() => { clip.stop(); shownAt.current = Date.now(); }, [question?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (answered) clip.stop(); }, [answered]); // eslint-disable-line react-hooks/exhaustive-deps
+  const playClip = () => {
+    if (!question) return;
+    if (clip.playing) { clip.stop(); return; }
+    if (player.playing) player.toggle(); // silence the footer player while a clip plays
+    clip.play(question.clipUrl);
+  };
   const begin = () => start.mutate({ data: { difficulty, rounds, genre: genre || null, era: era || null } }, { onSuccess: data => { setSessionId(data.id); setCurrent(data); setQuestion(data.question); setAnswered(null); setHint(false); } });
-  const submit = (optionId: string) => { if (!sessionId || !question || answered || answer.isPending) return; answer.mutate({ sessionId, data: { questionId: question.id, optionId, responseTimeMs: 4200, hintsUsed: hint ? 1 : 0 } }, { onSuccess: result => { setAnswered({ correct: result.correct, correctId: result.correctOptionId, points: result.pointsEarned }); setCurrent(prev => prev ? { ...prev, score: result.totalScore, streak: result.streak, completed: result.completed } : prev); if (result.nextQuestion && !result.completed) { setTimeout(() => { setQuestion(result.nextQuestion as GameQuestion); setAnswered(null); setHint(false); }, 900); } } }); };
-  if (current && question) return <PageFrame eyebrow={`Guess the track / ${current.difficulty} mode`} title={current.completed ? 'Set complete.' : `Round ${current.currentRound} of ${current.rounds}.`} intro={current.completed ? `You scored ${current.score} points with a ${current.streak} track streak. The crate remembers.` : 'Listen closely. Every detail is a clue, but only one answer belongs to this clip.'} accent="#ff3b9d"><div className="grid gap-6 lg:grid-cols-[1fr_380px]"><section className="ink-border hard-shadow bg-[#ff3b9d] p-6 md:p-10"><div className="flex items-center justify-between"><span className="zine-label">Clip / {question.clipLabel}</span><span className="border-2 border-foreground bg-primary px-2 py-1 text-xs font-bold">+{current.streak} STREAK</span></div><div className="my-16 text-center"><div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 border-foreground bg-primary"><Headphones size={38} /></div><p className="zine-label">Press play, trust the feeling</p><h2 className="display mt-4 text-5xl md:text-7xl">{answered ? (answered.correct ? 'That’s the one.' : 'Not this time.') : 'Who made this?'}</h2><button className="mt-7 inline-flex items-center gap-3 border-2 border-foreground bg-background px-6 py-3 font-bold" data-testid="button-play-clip"><Play size={18} fill="currentColor" /> PLAY 12 SEC CLIP</button></div>{!answered && <button onClick={() => setHint(true)} disabled={hint} className="flex items-center gap-2 border-t-2 border-foreground pt-4 text-xs font-bold disabled:opacity-50" data-testid="button-use-hint"><Zap size={15} /> {hint ? `HINT: ${question.genre} / ${question.releaseYear}` : 'USE A HINT (-25 PTS)'}</button>}{answered && <div className="border-t-2 border-foreground pt-4 text-sm font-bold">{answered.correct ? `Correct. +${answered.points} points.` : `The answer was ${question.options.find(o => o.id === answered.correctId)?.artistName || 'in the crate'}.`}</div>}</section><aside className="ink-border bg-card p-5 md:p-7"><div className="mb-5 flex justify-between"><p className="zine-label">Pick one</p><span className="zine-label">Score {current.score}</span></div><div className="space-y-3">{question.options.map((option, i) => <button key={option.id} onClick={() => submit(option.id)} disabled={!!answered || answer.isPending} className={`group flex w-full items-center gap-3 border-2 border-foreground p-4 text-left transition hover:-translate-x-1 hover:bg-primary disabled:cursor-default ${answered && option.id === answered.correctId ? 'bg-[#c7ff23]' : answered && option.id !== answered.correctId ? 'opacity-50' : 'bg-background'}`} data-testid={`button-answer-${option.id}`}><span className="grid h-7 w-7 place-items-center border-2 border-foreground text-xs font-bold">{String.fromCharCode(65 + i)}</span><span><strong className="block">{option.artistName}</strong><span className="text-xs text-muted-foreground">{option.title}</span></span></button>)}</div>{sessionQuery.isError && <p className="mt-4 text-xs text-[#d8471b]">Live sync is delayed, but your answer is queued.</p>}</aside></div></PageFrame>;
+  const submit = (optionId: string) => { if (!sessionId || !question || answered || answer.isPending) return; answer.mutate({ sessionId, data: { questionId: question.id, optionId, responseTimeMs: Math.max(0, Date.now() - shownAt.current), hintsUsed: hint ? 1 : 0 } }, { onSuccess: result => { setAnswered({ correct: result.correct, correctId: result.correctOptionId, points: result.pointsEarned }); setCurrent(prev => prev ? { ...prev, score: result.totalScore, streak: result.streak, completed: result.completed } : prev); if (result.nextQuestion && !result.completed) { setTimeout(() => { setQuestion(result.nextQuestion as GameQuestion); setAnswered(null); setHint(false); }, 900); } } }); };
+  if (current && question) return <PageFrame eyebrow={`Guess the track / ${current.difficulty} mode`} title={current.completed ? 'Set complete.' : `Round ${current.currentRound} of ${current.rounds}.`} intro={current.completed ? `You scored ${current.score} points with a ${current.streak} track streak. The crate remembers.` : 'Listen closely. Every detail is a clue, but only one answer belongs to this clip.'} accent="#ff3b9d"><div className="grid gap-6 lg:grid-cols-[1fr_380px]"><section className="ink-border hard-shadow bg-[#ff3b9d] p-6 md:p-10"><div className="flex items-center justify-between"><span className="zine-label">Clip / {question.clipLabel}</span><span className="border-2 border-foreground bg-primary px-2 py-1 text-xs font-bold">+{current.streak} STREAK</span></div><div className="my-16 text-center"><div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full border-2 border-foreground bg-primary"><Headphones size={38} /></div><p className="zine-label">Press play, trust the feeling</p><h2 className="display mt-4 text-5xl md:text-7xl">{answered ? (answered.correct ? 'That’s the one.' : 'Not this time.') : 'Who made this?'}</h2><button onClick={playClip} className="mt-7 inline-flex items-center gap-3 border-2 border-foreground bg-background px-6 py-3 font-bold" data-testid="button-play-clip">{clip.playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />} {clip.playing ? 'STOP CLIP' : 'PLAY 12 SEC CLIP'}</button></div>{!answered && <button onClick={() => setHint(true)} disabled={hint} className="flex items-center gap-2 border-t-2 border-foreground pt-4 text-xs font-bold disabled:opacity-50" data-testid="button-use-hint"><Zap size={15} /> {hint ? `HINT: ${question.genre} / ${question.releaseYear}` : 'USE A HINT (-5 PTS)'}</button>}{answered && <div className="border-t-2 border-foreground pt-4 text-sm font-bold">{answered.correct ? `Correct. +${answered.points} points.` : `The answer was ${question.options.find(o => o.id === answered.correctId)?.artistName || 'in the crate'}.`}</div>}</section><aside className="ink-border bg-card p-5 md:p-7"><div className="mb-5 flex justify-between"><p className="zine-label">Pick one</p><span className="zine-label">Score {current.score}</span></div><div className="space-y-3">{question.options.map((option, i) => <button key={option.id} onClick={() => submit(option.id)} disabled={!!answered || answer.isPending} className={`group flex w-full items-center gap-3 border-2 border-foreground p-4 text-left transition hover:-translate-x-1 hover:bg-primary disabled:cursor-default ${answered && option.id === answered.correctId ? 'bg-[#c7ff23]' : answered && option.id !== answered.correctId ? 'opacity-50' : 'bg-background'}`} data-testid={`button-answer-${option.id}`}><span className="grid h-7 w-7 place-items-center border-2 border-foreground text-xs font-bold">{String.fromCharCode(65 + i)}</span><span><strong className="block">{option.artistName}</strong><span className="text-xs text-muted-foreground">{option.title}</span></span></button>)}</div>{sessionQuery.isError && <p className="mt-4 text-xs text-[#d8471b]">Live sync is delayed, but your answer is queued.</p>}</aside></div></PageFrame>;
   return <PageFrame eyebrow="The listening game / daily edition" title="Name that track." intro="A twelve-second clip. Four plausible answers. One chance to prove you really listen."><div className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]"><section className="ink-border hard-shadow bg-[#16d9d2] p-6 md:p-10"><div className="flex justify-between"><span className="zine-label">Session setup / 01</span><span className="display text-2xl">QUIZ</span></div><h2 className="display mt-12 max-w-xl text-6xl md:text-8xl">How deep is your crate?</h2><p className="mt-7 max-w-md">Choose the pressure, then let the first kick drum tell you everything.</p><button disabled={start.isPending} onClick={begin} className="mt-12 inline-flex items-center gap-3 border-2 border-foreground bg-primary px-6 py-4 font-bold hover:bg-background disabled:opacity-60" data-testid="button-start-game">{start.isPending ? 'LOADING THE ROOM...' : 'START SESSION'} <ArrowUpRight size={18} /></button></section><section className="ink-border bg-card p-6 md:p-8"><p className="zine-label">Tune the rules</p><div className="mt-7"><label className="zine-label block">Difficulty</label><div className="mt-3 grid grid-cols-3 gap-2">{(['easy', 'medium', 'hard'] as const).map(level => <button key={level} onClick={() => setDifficulty(level)} className={`border-2 border-foreground px-2 py-3 text-xs font-bold uppercase ${difficulty === level ? 'bg-[#ff3b9d]' : 'bg-background'}`} data-testid={`button-difficulty-${level}`}>{level}</button>)}</div></div><div className="mt-7"><label className="zine-label block">Rounds</label><div className="mt-3 grid grid-cols-3 gap-2">{([5, 10, 20] as const).map(num => <button key={num} onClick={() => setRounds(num)} className={`border-2 border-foreground px-2 py-3 text-xs font-bold ${rounds === num ? 'bg-primary' : 'bg-background'}`} data-testid={`button-rounds-${num}`}>{num} TRACKS</button>)}</div></div><div className="mt-7"><label className="zine-label block" htmlFor="game-genre">Genre filter</label><select id="game-genre" value={genre} onChange={e => setGenre(e.target.value)} className="mt-3 w-full border-2 border-foreground bg-background p-3 text-sm font-bold" data-testid="select-game-genre"><option value="">ANY GENRE</option>{genres.data?.map(g => <option value={g.name} key={g.id}>{g.name}</option>)}</select></div><div className="mt-7"><label className="zine-label block" htmlFor="game-era">Era filter</label><select id="game-era" value={era} onChange={e => setEra(e.target.value)} className="mt-3 w-full border-2 border-foreground bg-background p-3 text-sm font-bold" data-testid="select-game-era"><option value="">ANY ERA</option><option value="2000s">2000s</option><option value="2010s">2010s</option><option value="2020s">2020s</option></select></div></section></div></PageFrame>;
 }
 
@@ -219,7 +311,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><PlayerProvider><TooltipProvider><Shell><Router /></Shell><Toaster /></TooltipProvider></PlayerProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><PlayerProvider><TooltipProvider><AuthGate><Shell><Router /></Shell></AuthGate><Toaster /></TooltipProvider></PlayerProvider></QueryClientProvider>;
 }
 
 export default App;

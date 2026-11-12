@@ -11,8 +11,9 @@ The project is a full-stack application with a React/Vite frontend (TypeScript),
 
 - Artist discovery with search, genre filters, recommendations, and artist details
 - Favorite artists and a personal library
-- Song-guessing game with difficulty levels, hints, streaks, time bonuses, and scoring
+- Song-guessing game: random 12-second audio clips from the track database, four different-artist options, genre/era filters, difficulty levels, hints, streaks, server-timed speed bonuses, and scoring. Answers are kept server-side and never sent to the browser.
 - Dashboard with listening-game stats, genre breakdowns, achievements, and recent activity
+- Email/password accounts with sign up, sign in, and sign out (argon2 password hashes, signed httpOnly session cookie)
 - Profile and all-time leaderboard views
 - Persistent favorites, game sessions, and game rounds
 - Fluorescent editorial/zine-inspired visual system
@@ -127,6 +128,7 @@ Open one terminal and run:
 cd artifacts/api-server-python
 source .venv/bin/activate
 export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
+export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 export PORT=8080
 
 python -m app.main
@@ -211,6 +213,9 @@ Database tables are created on API startup from `artifacts/api-server-python/app
 | Variable | Required by | Description |
 | --- | --- | --- |
 | `DATABASE_URL` | API | PostgreSQL connection string |
+| `JWT_SECRET` | API | Secret (32+ chars) used to sign session cookies |
+| `COOKIE_SECURE` | API | `true` when served over HTTPS; defaults to `false` |
+| `CORS_ORIGINS` | API | Optional comma-separated origins; unneeded behind the same-origin proxy |
 | `PORT` | API or frontend | Port for the process being started |
 | `BASE_PATH` | Frontend | Vite base path; use `/` for a normal local install |
 
@@ -263,7 +268,7 @@ Confirm that:
 
 - `lib/api-spec/openapi.yaml` is the source of truth for API contracts.
 - Generated API hooks should be regenerated after OpenAPI changes. The FastAPI routes in `app/api/edm.py` must be kept in sync with the spec by hand.
-- The API currently uses a demo user ID (`demo-dj`) because authentication has not yet been added.
+- Accounts live in `edm_users`; favorites and game sessions are keyed by the signed-in user's id. Browsing endpoints are public, everything user-specific requires a session.
 - The current product catalog is seeded data; PostgreSQL persists user-facing game and favorite state.
 - Spotify credentials, when eventually used, must stay in the API process and must never be exposed to the React application.
 

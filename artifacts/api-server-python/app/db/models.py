@@ -1,12 +1,26 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import JSON, Column, DateTime, Text, func
+from sqlalchemy import JSON, Column, DateTime, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlmodel import Field, SQLModel
 
 # text[] on PostgreSQL (matches the original schema), JSON elsewhere.
 _TextArray = JSON().with_variant(ARRAY(Text()), "postgresql")
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "edm_users"
+
+    id: str = Field(primary_key=True)
+    username: str
+    username_key: str = Field(unique=True, index=True)  # lower-cased, for uniqueness
+    email: str = Field(unique=True, index=True)  # lower-cased
+    password_hash: str
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )
 
 
 class Artist(SQLModel, table=True):
@@ -38,7 +52,7 @@ class Favorite(SQLModel, table=True):
     __tablename__ = "edm_favorites"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: str = Field(default="demo-dj")
+    user_id: str = Field(index=True)
     artist_id: str = Field(foreign_key="edm_artists.id")
     created_at: Optional[datetime] = Field(
         default=None,
@@ -50,7 +64,7 @@ class GameSession(SQLModel, table=True):
     __tablename__ = "edm_game_sessions"
 
     id: str = Field(primary_key=True)
-    user_id: str = Field(default="demo-dj")
+    user_id: str = Field(index=True)
     difficulty: str
     rounds: int
     current_round: int = 1
@@ -74,3 +88,17 @@ class GameRound(SQLModel, table=True):
     is_correct: Optional[bool] = None
     response_time_ms: Optional[int] = None
     hints_used: int = 0
+
+
+class GameQuestionRecord(SQLModel, table=True):
+    """One pre-generated question per round; the answer lives only on the server."""
+
+    __tablename__ = "edm_game_questions"
+    __table_args__ = (UniqueConstraint("session_id", "round_number"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: str = Field(foreign_key="edm_game_sessions.id", index=True)
+    round_number: int
+    track_id: str = Field(foreign_key="edm_tracks.id")  # the correct answer
+    option_ids: List[str] = Field(sa_column=Column(JSON, nullable=False))  # track ids, display order
+    asked_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
