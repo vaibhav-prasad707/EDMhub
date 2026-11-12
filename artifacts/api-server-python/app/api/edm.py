@@ -13,12 +13,7 @@ from app.db.models import Track as DbTrack
 from app.db.models import User
 from app.api.auth import user_out
 from app.db.session import get_session
-from app.lib.edm_data import (
-    API_ARTISTS,
-    API_TRACKS,
-    GENRES,
-    get_artist as find_artist,
-)
+from app.lib.catalog import genre_list, load_artists
 from app.lib.game import GameSetupError, build_questions
 from app.lib.scoring import calculate_points
 from app.lib.stats import aware, dashboard_stats, leaderboard, recent_activity
@@ -43,6 +38,7 @@ class Track(BaseModel):
     duration: str
     color: str
     previewUrl: Optional[str] = None
+    spotifyUri: Optional[str] = None
 
 
 class Artist(BaseModel):
@@ -201,8 +197,8 @@ def get_system_status():
 
 
 @router.get("/genres", response_model=List[Genre])
-def list_genres():
-    return GENRES
+def list_genres(session: Session = Depends(get_session)):
+    return genre_list(load_artists(session))
 
 
 @router.get("/artists", response_model=List[Artist])
@@ -225,7 +221,7 @@ def list_artists(
         )
         return genre_ok and search_ok
 
-    filtered = [a for a in API_ARTISTS if matches(a)]
+    filtered = [a for a in load_artists(session) if matches(a)]
     return with_favorite_state(filtered[:limit], get_favorite_ids(session, user))
 
 
@@ -235,14 +231,15 @@ def get_artist(
     session: Session = Depends(get_session),
     user: Optional[User] = Depends(get_optional_user),
 ):
-    artist = find_artist(artist_id)
+    artists = load_artists(session)
+    artist = next((a for a in artists if a["id"] == artist_id), None)
     if not artist:
         raise not_found("Artist not found")
 
     favorite_ids = get_favorite_ids(session, user)
-    top_tracks = [t for t in API_TRACKS if t["artistName"] == artist["name"]]
+    top_tracks = artist["_tracks"]
     similar = [
-        c for c in API_ARTISTS
+        c for c in artists
         if c["id"] != artist["id"] and any(g in artist["genres"] for g in c["genres"])
     ][:3]
 
@@ -263,7 +260,7 @@ def get_recommendations(
     selected = [g.strip().lower() for g in (genres or "House,Garage").split(",") if g.strip()]
     favorite_ids = get_favorite_ids(session, user)
     ranked = sorted(
-        API_ARTISTS,
+        load_artists(session),
         key=lambda a: sum(1 for g in a["genres"] if g.lower() in selected),
         reverse=True,
     )
@@ -276,7 +273,7 @@ def toggle_artist_favorite(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    if not find_artist(artist_id):
+    if session.get(DbArtist, artist_id) is None:
         raise not_found("Artist not found")
 
     existing = session.exec(
@@ -416,7 +413,8 @@ def get_dashboard(
 ):
     profile = user_out(user)
     favorite_ids = get_favorite_ids(session, user)
-    stats = dashboard_stats(session, user, favorite_ids)
+    artists = load_artists(session)
+    stats = dashboard_stats(session, user, artists)
     return {
         "profile": {
             "username": profile.username.upper(),
@@ -426,7 +424,7 @@ def get_dashboard(
         },
         **stats,
         "favoriteArtists": with_favorite_state(
-            [a for a in API_ARTISTS if a["id"] in favorite_ids], favorite_ids
+            [a for a in artists if a["id"] in favorite_ids], favorite_ids
         ),
     }
 

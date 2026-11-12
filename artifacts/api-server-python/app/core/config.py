@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     # Set to true when served over HTTPS (production).
     COOKIE_SECURE: bool = False
 
-    # Spotify API credentials (server-side only; integration is currently disabled)
+    # Spotify API credentials (server-side only)
     SPOTIPY_CLIENT_ID: Optional[str] = None
     SPOTIPY_CLIENT_SECRET: Optional[str] = None
+    # Must be registered verbatim in the Spotify dashboard. Spotify only allows http for the
+    # loopback IP literal, so use 127.0.0.1 (not localhost) and open the app at that address.
+    SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:18796/api/spotify/callback"
 
 
 settings = Settings()

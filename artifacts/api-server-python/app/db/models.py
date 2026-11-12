@@ -33,6 +33,7 @@ class Artist(SQLModel, table=True):
     genres: List[str] = Field(sa_column=Column(_TextArray, nullable=False))
     followers: str
     accent: str
+    spotify_id: Optional[str] = Field(default=None, unique=True, index=True)
 
 
 class Track(SQLModel, table=True):
@@ -46,6 +47,10 @@ class Track(SQLModel, table=True):
     duration: str
     color: str
     preview_url: Optional[str] = None
+    spotify_id: Optional[str] = Field(default=None, unique=True, index=True)
+    spotify_uri: Optional[str] = None
+    # "seed" = built-in placeholder catalog, "spotify" = imported by the sync script
+    source: str = Field(default="seed", sa_column_kwargs={"server_default": "seed"})
 
 
 class Favorite(SQLModel, table=True):
@@ -102,3 +107,17 @@ class GameQuestionRecord(SQLModel, table=True):
     track_id: str = Field(foreign_key="edm_tracks.id")  # the correct answer
     option_ids: List[str] = Field(sa_column=Column(JSON, nullable=False))  # track ids, display order
     asked_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+
+
+class SpotifyLink(SQLModel, table=True):
+    """A user's connected Spotify account (used for full-track playback in the browser)."""
+
+    __tablename__ = "edm_spotify_links"
+
+    user_id: str = Field(primary_key=True, foreign_key="edm_users.id")
+    spotify_user_id: Optional[str] = None
+    refresh_token_enc: str  # encrypted at rest, see app/core/crypto.py
+    linked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )

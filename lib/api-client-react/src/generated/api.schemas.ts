@@ -13,6 +13,19 @@ export interface User {
   memberSince: string;
 }
 
+export interface SpotifyAuthorizeUrl {
+  url: string;
+}
+
+export interface SpotifyStatus {
+  connected: boolean;
+}
+
+export interface SpotifyAccessToken {
+  accessToken: string;
+  expiresIn: number;
+}
+
 export interface SignupInput {
   /**
      * @minLength 3
@@ -53,6 +66,11 @@ export interface Track {
   color: string;
   /** @nullable */
   previewUrl?: string | null;
+  /**
+     * Spotify URI, present for tracks imported from Spotify
+     * @nullable
+     */
+  spotifyUri?: string | null;
 }
 
 export interface Artist {

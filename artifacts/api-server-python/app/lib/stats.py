@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import case, func
 from sqlmodel import Session, col, select
 
-from app.db.models import Favorite, GameRound, GameSession, Track, User
-from app.lib.edm_data import API_ARTISTS, get_artist
+from app.db.models import Artist, Favorite, GameRound, GameSession, Track, User
 from app.lib.names import initials_for
 
 PALETTE = ["#D6FF00", "#FF3C8B", "#19D3D1", "#9B8CFF", "#FF8A1F"]
@@ -37,7 +36,7 @@ def _streaks(flags: List[bool]):
     return best, run  # best run, trailing (current) run
 
 
-def dashboard_stats(session: Session, user: User, favorite_ids: set) -> Dict[str, Any]:
+def dashboard_stats(session: Session, user: User, artists: List[Dict[str, Any]]) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     sessions = session.exec(
         select(GameSession).where(GameSession.user_id == user.id).order_by(col(GameSession.started_at))
@@ -94,7 +93,7 @@ def dashboard_stats(session: Session, user: User, favorite_ids: set) -> Dict[str
             "totalPoints": sum(s.score for s in sessions),
             "currentStreak": current_streak,
             "bestStreak": best_streak,
-            "artistOfWeek": API_ARTISTS[week % len(API_ARTISTS)]["name"],
+            "artistOfWeek": artists[week % len(artists)]["name"] if artists else "—",
             "favoriteGenre": favorite_genre,
             "hottestTrack": hottest,
         },
@@ -144,10 +143,10 @@ def recent_activity(session: Session, user: User, limit: int = 10) -> List[Dict[
             "when": aware(game.started_at), "accent": PALETTE[0],
         })
     for fav in session.exec(select(Favorite).where(Favorite.user_id == user.id)).all():
-        artist = get_artist(fav.artist_id)
+        artist = session.get(Artist, fav.artist_id)
         events.append({
             "id": f"favorite-{fav.id}", "kind": "artist", "title": "Favorite added",
-            "detail": artist["name"] if artist else fav.artist_id,
+            "detail": artist.name if artist else fav.artist_id,
             "when": aware(fav.created_at), "accent": PALETTE[3],
         })
     events.sort(key=lambda e: e["when"], reverse=True)

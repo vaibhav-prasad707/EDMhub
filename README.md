@@ -19,17 +19,27 @@ The project is a full-stack application with a React/Vite frontend (TypeScript),
 - Fluorescent editorial/zine-inspired visual system
 - Same-origin local API proxy for normal desktop development
 
-## Current data source
+## Music data and playback
 
-The initial catalog is seeded locally in:
+The catalog lives in PostgreSQL. A small built-in seed (`app/lib/edm_data.py`) gives the app something to show on first run; the real catalog comes from Spotify:
 
-```text
-artifacts/api-server-python/app/lib/edm_data.py
+```bash
+cd artifacts/api-server-python
+python -m app.scripts.sync_spotify            # import every curated artist
+python -m app.scripts.sync_spotify --genre Techno --per-artist 4
 ```
 
-The API inserts this catalog into PostgreSQL on startup. Artist and track discovery currently reads from the seeded in-memory catalog, while favorites and game activity are persisted in PostgreSQL.
+- The artist list is `app/lib/curated_artists.py`. Spotify's API (development mode) returns no genres, follower counts or popularity, so genres are assigned there and imported artists show "—" followers.
+- Spotify no longer provides audio previews to new apps. The importer fills 30-second clips from the public iTunes Search API, and only accepts a match when both the artist and the title agree. Tracks with no match stay in the catalog but are left out of the guessing game.
+- Re-running the sync is safe (rows are matched by Spotify ID).
+- Spotify credentials stay in the API process (`.env`) and are never sent to the browser.
 
-Spotify import/synchronization is not currently enabled. Do not put Spotify credentials in frontend code or commit them to this repository. A future server-side importer should use the Spotify Client Credentials flow and upsert Spotify artist and track IDs into the database.
+**Playback**
+- Everyone hears the 30-second preview clips. The guessing game always uses these.
+- A user can click **Connect** in the sidebar to link a Spotify account. The player then streams full tracks through the Spotify Web Playback SDK. This needs Spotify **Premium**, and because the app is in Spotify *Development Mode*, only accounts added under *User Management* in the Spotify dashboard (max 5) can use it. Anyone else automatically falls back to previews.
+- In the Spotify dashboard, add this Redirect URI to the app, and open EDM Hub at `http://127.0.0.1:18796` (Spotify does not allow `localhost` for http redirects):
+  `http://127.0.0.1:18796/api/spotify/callback` (override with `SPOTIFY_REDIRECT_URI`).
+- The Web Playback SDK must not be used commercially without Spotify's written approval.
 
 ## Tech stack
 
@@ -213,6 +223,8 @@ Database tables are created on API startup from `artifacts/api-server-python/app
 | Variable | Required by | Description |
 | --- | --- | --- |
 | `DATABASE_URL` | API | PostgreSQL connection string |
+| `SPOTIPY_CLIENT_ID` / `SPOTIPY_CLIENT_SECRET` | API | Spotify app credentials (never commit or expose them) |
+| `SPOTIFY_REDIRECT_URI` | API | Spotify OAuth redirect; default `http://127.0.0.1:18796/api/spotify/callback` |
 | `JWT_SECRET` | API | Secret (32+ chars) used to sign session cookies |
 | `COOKIE_SECURE` | API | `true` when served over HTTPS; defaults to `false` |
 | `CORS_ORIGINS` | API | Optional comma-separated origins; unneeded behind the same-origin proxy |

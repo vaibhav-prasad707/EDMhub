@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: auth
     description: Accounts and sessions
+  - name: spotify
+    description: Connecting a Spotify account for full-track playback
   - name: artists
     description: EDM artist discovery and favorites
   - name: game
@@ -96,6 +98,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+        "401":
+          description: Not signed in
+  /spotify/authorize:
+    get:
+      operationId: getSpotifyAuthorizeUrl
+      tags: [spotify]
+      summary: Get the Spotify consent URL for connecting an account
+      responses:
+        "200":
+          description: URL to send the browser to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpotifyAuthorizeUrl"
+        "401":
+          description: Not signed in
+        "503":
+          description: Spotify is not configured on this server
+  /spotify/status:
+    get:
+      operationId: getSpotifyStatus
+      tags: [spotify]
+      summary: Whether the signed-in user has connected Spotify
+      responses:
+        "200":
+          description: Connection state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpotifyStatus"
+        "401":
+          description: Not signed in
+  /spotify/token:
+    get:
+      operationId: getSpotifyAccessToken
+      tags: [spotify]
+      summary: Short-lived access token for the Web Playback SDK
+      responses:
+        "200":
+          description: Access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpotifyAccessToken"
+        "401":
+          description: Not signed in
+        "404":
+          description: Spotify is not connected
+  /spotify/link:
+    delete:
+      operationId: disconnectSpotify
+      tags: [spotify]
+      summary: Disconnect the Spotify account
+      responses:
+        "204":
+          description: Disconnected
         "401":
           description: Not signed in
   /genres:
@@ -337,6 +395,26 @@ components:
           type: string
         memberSince:
           type: string
+    SpotifyAuthorizeUrl:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+    SpotifyStatus:
+      type: object
+      required: [connected]
+      properties:
+        connected:
+          type: boolean
+    SpotifyAccessToken:
+      type: object
+      required: [accessToken, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
     SignupInput:
       type: object
       required: [username, email, password]
@@ -397,6 +475,9 @@ components:
           type: string
         previewUrl:
           type: ["string", "null"]
+        spotifyUri:
+          type: ["string", "null"]
+          description: Spotify URI, present for tracks imported from Spotify
     Artist:
       type: object
       required: [id, name, imageUrl, bio, genres, followers, accent, topTrack]

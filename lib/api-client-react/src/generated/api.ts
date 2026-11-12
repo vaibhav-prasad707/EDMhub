@@ -36,6 +36,9 @@ import type {
   ListArtistsParams,
   LoginInput,
   SignupInput,
+  SpotifyAccessToken,
+  SpotifyAuthorizeUrl,
+  SpotifyStatus,
   User
 } from './api.schemas';
 
@@ -433,6 +436,308 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
 
 
 
+
+export const getGetSpotifyAuthorizeUrlUrl = () => {
+
+
+
+
+  return `/api/spotify/authorize`
+}
+
+/**
+ * @summary Get the Spotify consent URL for connecting an account
+ */
+export const getSpotifyAuthorizeUrl = async ( options?: Parameters<typeof customFetch>[1]): Promise<SpotifyAuthorizeUrl> => {
+
+  return customFetch<SpotifyAuthorizeUrl>(getGetSpotifyAuthorizeUrlUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSpotifyAuthorizeUrlQueryKey = () => {
+    return [
+    `/api/spotify/authorize`
+    ] as const;
+    }
+
+
+export const getGetSpotifyAuthorizeUrlQueryOptions = <TData = Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSpotifyAuthorizeUrlQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>> = ({ signal }) => getSpotifyAuthorizeUrl({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSpotifyAuthorizeUrlQueryResult = NonNullable<Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>>
+export type GetSpotifyAuthorizeUrlQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the Spotify consent URL for connecting an account
+ */
+
+export function useGetSpotifyAuthorizeUrl<TData = Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAuthorizeUrl>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSpotifyAuthorizeUrlQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSpotifyStatusUrl = () => {
+
+
+
+
+  return `/api/spotify/status`
+}
+
+/**
+ * @summary Whether the signed-in user has connected Spotify
+ */
+export const getSpotifyStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<SpotifyStatus> => {
+
+  return customFetch<SpotifyStatus>(getGetSpotifyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSpotifyStatusQueryKey = () => {
+    return [
+    `/api/spotify/status`
+    ] as const;
+    }
+
+
+export const getGetSpotifyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getSpotifyStatus>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSpotifyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSpotifyStatus>>> = ({ signal }) => getSpotifyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSpotifyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSpotifyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getSpotifyStatus>>>
+export type GetSpotifyStatusQueryError = ErrorType<void>
+
+
+/**
+ * @summary Whether the signed-in user has connected Spotify
+ */
+
+export function useGetSpotifyStatus<TData = Awaited<ReturnType<typeof getSpotifyStatus>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSpotifyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSpotifyAccessTokenUrl = () => {
+
+
+
+
+  return `/api/spotify/token`
+}
+
+/**
+ * @summary Short-lived access token for the Web Playback SDK
+ */
+export const getSpotifyAccessToken = async ( options?: Parameters<typeof customFetch>[1]): Promise<SpotifyAccessToken> => {
+
+  return customFetch<SpotifyAccessToken>(getGetSpotifyAccessTokenUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSpotifyAccessTokenQueryKey = () => {
+    return [
+    `/api/spotify/token`
+    ] as const;
+    }
+
+
+export const getGetSpotifyAccessTokenQueryOptions = <TData = Awaited<ReturnType<typeof getSpotifyAccessToken>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAccessToken>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSpotifyAccessTokenQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSpotifyAccessToken>>> = ({ signal }) => getSpotifyAccessToken({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAccessToken>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSpotifyAccessTokenQueryResult = NonNullable<Awaited<ReturnType<typeof getSpotifyAccessToken>>>
+export type GetSpotifyAccessTokenQueryError = ErrorType<void>
+
+
+/**
+ * @summary Short-lived access token for the Web Playback SDK
+ */
+
+export function useGetSpotifyAccessToken<TData = Awaited<ReturnType<typeof getSpotifyAccessToken>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSpotifyAccessToken>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSpotifyAccessTokenQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDisconnectSpotifyUrl = () => {
+
+
+
+
+  return `/api/spotify/link`
+}
+
+/**
+ * @summary Disconnect the Spotify account
+ */
+export const disconnectSpotify = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDisconnectSpotifyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDisconnectSpotifyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectSpotify>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectSpotify>>, TError,void, TContext> => {
+
+const mutationKey = ['disconnectSpotify'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectSpotify>>, void> = () => {
+
+
+          return  disconnectSpotify(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectSpotifyMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectSpotify>>>
+
+    export type DisconnectSpotifyMutationError = ErrorType<void>
+
+    /**
+ * @summary Disconnect the Spotify account
+ */
+export const useDisconnectSpotify = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectSpotify>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectSpotify>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDisconnectSpotifyMutationOptions(options));
+    }
 
 export const getListGenresUrl = () => {
 

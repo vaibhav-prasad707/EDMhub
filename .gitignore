@@ -58,3 +58,6 @@ venv/
 .env.*
 .venv/
 env/
+
+# spotipy token cache
+.cache

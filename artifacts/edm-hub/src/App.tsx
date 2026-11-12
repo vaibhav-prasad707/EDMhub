@@ -65,6 +65,7 @@ import { Link, Route, Switch, useLocation } from 'wouter';
 import NotFound from '@/pages/not-found';
 import { PlayerProvider, usePlayer } from '@/lib/player';
 import { useClip } from '@/lib/clip';
+import { toast } from '@/hooks/use-toast';
 
 function httpStatus(error: unknown): number | undefined {
   return (error as { status?: number } | null)?.status;
@@ -158,6 +159,15 @@ function Shell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: user } = useGetCurrentUser({ query: { queryKey: getGetCurrentUserQueryKey(), retry: false, staleTime: Infinity } });
   const logout = useLogout();
+  const { spotify } = usePlayer();
+  useEffect(() => {
+    // Spotify sends the browser back here with ?spotify=connected|error.
+    const result = new URLSearchParams(window.location.search).get('spotify');
+    if (!result) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    if (result === 'connected') toast({ title: 'Spotify connected', description: 'Full tracks will play when your account allows it.' });
+    else toast({ title: 'Spotify connection failed', description: 'Try connecting again.', variant: 'destructive' });
+  }, []);
   const nav = [
     { href: '/', label: 'Overview', icon: BarChart3 },
     { href: '/discover', label: 'Discover', icon: Search },
@@ -171,7 +181,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="mb-12 flex items-center justify-between"><Link href="/" className="flex items-center gap-3" data-testid="link-logo"><span className="grid h-10 w-10 place-items-center border-2 border-primary bg-primary text-xl font-black text-sidebar"><Music2 /></span><span className="display text-2xl tracking-[-.08em]">EDM<br />HUB<span className="text-primary">.</span></span></Link><button className="md:hidden" onClick={() => setMobileOpen(false)} data-testid="button-close-menu"><X /></button></div>
       <div className="zine-label mb-3 text-primary">Your frequency</div>
       <nav className="space-y-1" aria-label="Main navigation">{nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className={`flex items-center gap-3 border-2 border-transparent px-3 py-3 text-sm font-bold transition hover:border-primary hover:bg-primary/10 ${location === href ? 'border-primary bg-primary text-sidebar' : ''}`} data-testid={`link-nav-${label.toLowerCase().replaceAll(' ', '-')}`}><Icon size={18} strokeWidth={2.3} /><span>{label}</span>{location === href && <ChevronRight className="ml-auto" size={16} />}</Link>)}</nav>
-      <div className="mt-auto border-t border-sidebar-foreground/30 pt-5"><div className="zine-label text-sidebar-foreground/60">Session status</div><div className="mt-3 flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-primary" /> Live crate active</div>{user && <div className="mt-4 flex items-center justify-between gap-2 border border-sidebar-foreground/40 px-2 py-2"><span className="truncate text-xs font-bold" data-testid="text-current-user">{user.username}</span><button onClick={() => logout.mutate(undefined, { onSettled: () => window.location.assign('/') })} disabled={logout.isPending} className="zine-label shrink-0 text-primary underline" data-testid="button-logout">Sign out</button></div>}<div className="mt-5 flex gap-2"><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">V. 02</span><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">SF / 2024</span></div></div>
+      <div className="mt-auto border-t border-sidebar-foreground/30 pt-5"><div className="zine-label text-sidebar-foreground/60">Session status</div><div className="mt-3 flex items-center gap-2 text-sm"><span className="h-2 w-2 rounded-full bg-primary" /> Live crate active</div>{user && <div className="mt-4 flex items-center justify-between gap-2 border border-sidebar-foreground/40 px-2 py-2"><span className="truncate text-xs font-bold" data-testid="text-current-user">{user.username}</span><button onClick={() => logout.mutate(undefined, { onSettled: () => window.location.assign('/') })} disabled={logout.isPending} className="zine-label shrink-0 text-primary underline" data-testid="button-logout">Sign out</button></div>}<div className="mt-3 flex items-center justify-between gap-2 border border-sidebar-foreground/40 px-2 py-2"><span className="zine-label text-sidebar-foreground/70" data-testid="text-spotify-status">{spotify.connected ? (spotify.ready ? 'Spotify live' : 'Spotify linking') : 'Spotify'}</span><button onClick={spotify.connected ? spotify.disconnect : spotify.connect} disabled={spotify.busy} className="zine-label shrink-0 text-primary underline disabled:opacity-60" data-testid="button-spotify-toggle">{spotify.connected ? 'Disconnect' : 'Connect'}</button></div><div className="mt-5 flex gap-2"><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">V. 02</span><span className="border border-sidebar-foreground/40 px-2 py-1 text-[10px]">SF / 2024</span></div></div>
     </aside>
     {mobileOpen && <button className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}
     <main className="md:pl-[252px]"><header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b-2 border-foreground bg-background/95 px-5 backdrop-blur md:px-9"><button className="md:hidden" onClick={() => setMobileOpen(true)} data-testid="button-open-menu"><Menu /></button><div className="hidden items-center gap-2 md:flex"><span className="zine-label">EDM HUB /</span><span className="text-sm font-bold capitalize">{location === '/' ? 'overview' : location.slice(1)}</span></div><div className="ml-auto flex items-center gap-3"><div className="hidden items-center gap-2 border-2 border-foreground bg-card px-3 py-2 sm:flex"><span className="h-2 w-2 rounded-full bg-[#ff3b9d]" /><span className="zine-label">Broadcasting now</span></div><Link href="/profile" className="grid h-9 w-9 place-items-center border-2 border-foreground bg-primary font-bold" data-testid="link-header-profile">AJ</Link></div></header>{children}</main>
@@ -190,7 +200,7 @@ function TrackPlayButton({ track, queue, className = '', size = 16 }: { track: T
   const player = usePlayer();
   const active = player.current?.id === track.id;
   const isPlaying = active && player.playing;
-  if (!track.previewUrl) return null;
+  if (!player.canPlay(track)) return null;
   return <button onClick={e => { e.stopPropagation(); player.playTrack(track, queue); }} className={`grid shrink-0 place-items-center border-2 border-foreground bg-primary hover:bg-card ${className}`} aria-label={`${isPlaying ? 'Pause' : 'Play'} ${track.title}`} data-testid={`button-play-${track.id}`}>{isPlaying ? <Pause size={size} fill="currentColor" /> : <Play size={size} fill="currentColor" />}</button>;
 }
 
@@ -198,7 +208,7 @@ function Player() {
   const player = usePlayer();
   const radioParams = { limit: 50 };
   const radio = useListArtists(radioParams, { query: { queryKey: getListArtistsQueryKey(radioParams) } });
-  const radioQueue = useMemo(() => (radio.data ?? []).map(a => a.topTrack).filter(t => t.previewUrl), [radio.data]);
+  const radioQueue = useMemo(() => (radio.data ?? []).map(a => a.topTrack).filter(player.canPlay), [radio.data, player.canPlay]);
   const { current, playing, loading, error, currentTime, duration, volume } = player;
   const onToggle = () => {
     if (current) player.toggle();
@@ -311,7 +321,7 @@ function Router() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><PlayerProvider><TooltipProvider><AuthGate><Shell><Router /></Shell></AuthGate><Toaster /></TooltipProvider></PlayerProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><TooltipProvider><AuthGate><PlayerProvider><Shell><Router /></Shell></PlayerProvider></AuthGate><Toaster /></TooltipProvider></QueryClientProvider>;
 }
 
 export default App;

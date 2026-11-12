@@ -36,6 +36,9 @@ def build_questions(
     """
     rng = rng or random.Random()
     playable = [(t, a) for t, a in catalog if t.preview_url]
+    # Once real (Spotify-imported) tracks exist, the stand-in placeholder audio is left out.
+    if any(t.source == "spotify" for t, _ in playable):
+        playable = [(t, a) for t, a in playable if t.source == "spotify"]
     bounds = era_bounds(era)
     genre_key = genre.strip().lower() if genre and genre.strip() else None
 
