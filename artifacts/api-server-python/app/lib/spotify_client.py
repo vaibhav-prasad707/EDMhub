@@ -47,10 +47,12 @@ class SpotifyClient:
             return None
         result = self.sp.search(q=f'artist:"{name}"', type="artist", limit=SEARCH_PAGE)
         wanted = fold(name)
-        for item in result["artists"]["items"]:
-            if fold(item["name"]) == wanted:
-                return item
-        return None
+        exact = [item for item in result["artists"]["items"] if fold(item["name"]) == wanted]
+        if not exact:
+            return None
+        # With no genres/popularity available, a name shared by several Spotify artists can't be
+        # told apart: take the top search hit but flag it so the sync report can list it.
+        return {**exact[0], "ambiguous": len(exact) > 1}
 
     def artist_tracks(self, artist: Dict[str, Any], want: int = 6) -> List[Dict[str, Any]]:
         """Distinct, non-variant tracks credited to the artist (up to `want`)."""

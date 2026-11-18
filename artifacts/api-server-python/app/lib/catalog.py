@@ -53,9 +53,10 @@ def load_artists(session: Session) -> List[Dict[str, Any]]:
             "accent": artist.accent,
             "topTrack": api_tracks[0],
             "_tracks": api_tracks,
+            "_order": artist.sort_order,
         })
-    # Artists whose top track is playable first, then alphabetical.
-    artists.sort(key=lambda a: (not a["topTrack"]["previewUrl"], a["name"].lower()))
+    # Artists whose top track is playable first, then the curated order (genres interleaved).
+    artists.sort(key=lambda a: (not a["topTrack"]["previewUrl"], a["_order"], a["name"].lower()))
     return artists
 
 

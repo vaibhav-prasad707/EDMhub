@@ -34,6 +34,8 @@ class Artist(SQLModel, table=True):
     followers: str
     accent: str
     spotify_id: Optional[str] = Field(default=None, unique=True, index=True)
+    # Position in the curated list; the app shows artists in this order (lowest first).
+    sort_order: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
 
 
 class Track(SQLModel, table=True):

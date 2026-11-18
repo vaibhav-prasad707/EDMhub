@@ -10,6 +10,7 @@ from sqlalchemy.engine import Engine
 STATEMENTS = [
     "ALTER TABLE edm_artists ADD COLUMN IF NOT EXISTS spotify_id VARCHAR",
     "CREATE UNIQUE INDEX IF NOT EXISTS ix_edm_artists_spotify_id ON edm_artists (spotify_id)",
+    "ALTER TABLE edm_artists ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE edm_tracks ADD COLUMN IF NOT EXISTS spotify_id VARCHAR",
     "ALTER TABLE edm_tracks ADD COLUMN IF NOT EXISTS spotify_uri VARCHAR",
     "ALTER TABLE edm_tracks ADD COLUMN IF NOT EXISTS source VARCHAR NOT NULL DEFAULT 'seed'",

@@ -25,11 +25,15 @@ The catalog lives in PostgreSQL. A small built-in seed (`app/lib/edm_data.py`) g
 
 ```bash
 cd artifacts/api-server-python
-python -m app.scripts.sync_spotify            # import every curated artist
+python -m app.scripts.sync_spotify            # import every curated artist (about an hour the first time)
 python -m app.scripts.sync_spotify --genre Techno --per-artist 4
+python -m app.scripts.sync_spotify --refresh  # also re-fetch artists that were already imported
 ```
 
-- The artist list is `app/lib/curated_artists.py`. Spotify's API (development mode) returns no genres, follower counts or popularity, so genres are assigned there and imported artists show "—" followers.
+- The artist list is `app/lib/curated_artists.py`, written as one section per primary genre with `(+ secondary genres)`. An artist listed in several sections is imported once with their genres merged, and the first section they appear in gives their primary genre. Spotify's API (development mode) returns no genres, follower counts or popularity, so genres come from that file and imported artists show "—" followers.
+- Artists are shown in list order with the genres interleaved, so the first page covers every genre.
+- By default the sync skips artists that were already imported (it only refreshes their genres and order), so after editing the list it only downloads the new ones and can be resumed if interrupted.
+- The sync prints names that are shared by several Spotify artists (so the wrong one may have been picked), and artists with no matching preview. Review those lists after a run.
 - Spotify no longer provides audio previews to new apps. The importer fills 30-second clips from the public iTunes Search API, and only accepts a match when both the artist and the title agree. Tracks with no match stay in the catalog but are left out of the guessing game.
 - Re-running the sync is safe (rows are matched by Spotify ID).
 - Spotify credentials stay in the API process (`.env`) and are never sent to the browser.
