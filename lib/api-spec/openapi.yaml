@@ -170,6 +170,20 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Genre"
+  /game/artists:
+    get:
+      operationId: listGameArtists
+      tags: [game]
+      summary: Artists with playable clips, for the quiz artist filter
+      responses:
+        "200":
+          description: Artists that can be quizzed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GameArtist"
   /artists:
     get:
       operationId: listArtists
@@ -432,9 +446,9 @@ components:
           maxLength: 128
     LoginInput:
       type: object
-      required: [email, password]
+      required: [username, password]
       properties:
-        email:
+        username:
           type: string
         password:
           type: string
@@ -538,6 +552,18 @@ components:
           type: ["string", "null"]
         era:
           type: ["string", "null"]
+        artistId:
+          type: ["string", "null"]
+    GameArtist:
+      type: object
+      required: [id, name, trackCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        trackCount:
+          type: integer
     GameOption:
       type: object
       required: [id, title, artistName]

@@ -14,7 +14,7 @@ from app.db.models import User
 from app.api.auth import user_out
 from app.db.session import get_session
 from app.lib.catalog import genre_list, load_artists
-from app.lib.game import GameSetupError, build_questions
+from app.lib.game import GameSetupError, build_questions, playable_artists
 from app.lib.scoring import calculate_points
 from app.lib.stats import aware, dashboard_stats, leaderboard, recent_activity
 
@@ -68,6 +68,13 @@ class GameStartInput(BaseModel):
     rounds: Literal[5, 10, 20]
     genre: Optional[str] = None
     era: Optional[str] = None
+    artistId: Optional[str] = None
+
+
+class GameArtist(BaseModel):
+    id: str
+    name: str
+    trackCount: int
 
 
 class GameOption(BaseModel):
@@ -290,6 +297,15 @@ def toggle_artist_favorite(
     return FavoriteState(artistId=artist_id, isFavorite=is_favorite)
 
 
+@router.get("/game/artists", response_model=List[GameArtist])
+def list_game_artists(session: Session = Depends(get_session)):
+    """Artists that have at least one playable clip, for the quiz artist filter."""
+    return [
+        GameArtist(id=a.id, name=a.name, trackCount=n)
+        for a, n in playable_artists(load_catalog(session))
+    ]
+
+
 @router.post("/game/sessions", response_model=GameSessionOut, status_code=201)
 def start_game(
     data: GameStartInput,
@@ -297,7 +313,7 @@ def start_game(
     user: User = Depends(get_current_user),
 ):
     try:
-        plan = build_questions(load_catalog(session), data.rounds, data.genre, data.era)
+        plan = build_questions(load_catalog(session), data.rounds, data.genre, data.era, data.artistId)
     except GameSetupError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

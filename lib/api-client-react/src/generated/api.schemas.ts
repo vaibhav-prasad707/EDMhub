@@ -42,7 +42,7 @@ export interface SignupInput {
 }
 
 export interface LoginInput {
-  email: string;
+  username: string;
   password: string;
 }
 
@@ -120,6 +120,14 @@ export interface GameStartInput {
   genre?: string | null;
   /** @nullable */
   era?: string | null;
+  /** @nullable */
+  artistId?: string | null;
+}
+
+export interface GameArtist {
+  id: string;
+  name: string;
+  trackCount: number;
 }
 
 export interface GameOption {

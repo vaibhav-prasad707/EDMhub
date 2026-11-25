@@ -27,6 +27,7 @@ import type {
   FavoriteState,
   GameAnswerInput,
   GameAnswerResult,
+  GameArtist,
   GameSession,
   GameStartInput,
   Genre,
@@ -804,6 +805,83 @@ export function useListGenres<TData = Awaited<ReturnType<typeof listGenres>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGenresQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListGameArtistsUrl = () => {
+
+
+
+
+  return `/api/game/artists`
+}
+
+/**
+ * @summary Artists with playable clips, for the quiz artist filter
+ */
+export const listGameArtists = async ( options?: Parameters<typeof customFetch>[1]): Promise<GameArtist[]> => {
+
+  return customFetch<GameArtist[]>(getListGameArtistsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGameArtistsQueryKey = () => {
+    return [
+    `/api/game/artists`
+    ] as const;
+    }
+
+
+export const getListGameArtistsQueryOptions = <TData = Awaited<ReturnType<typeof listGameArtists>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGameArtists>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGameArtistsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGameArtists>>> = ({ signal }) => listGameArtists({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGameArtists>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGameArtistsQueryResult = NonNullable<Awaited<ReturnType<typeof listGameArtists>>>
+export type ListGameArtistsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Artists with playable clips, for the quiz artist filter
+ */
+
+export function useListGameArtists<TData = Awaited<ReturnType<typeof listGameArtists>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGameArtists>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGameArtistsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

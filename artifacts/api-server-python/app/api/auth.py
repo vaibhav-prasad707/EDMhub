@@ -55,7 +55,7 @@ class SignupInput(BaseModel):
 
 
 class LoginInput(BaseModel):
-    email: str
+    username: str
     password: str = Field(max_length=128)
 
 
@@ -112,9 +112,9 @@ def signup(data: SignupInput, response: Response, session: Session = Depends(get
 
 @router.post("/login", response_model=UserOut)
 def login(data: LoginInput, response: Response, session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == data.email.strip().lower())).first()
+    user = session.exec(select(User).where(User.username_key == data.username.strip().lower())).first()
     if not verify_password(data.password, user.password_hash if user else None):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     set_session_cookie(response, user.id)
     return user_out(user)
 

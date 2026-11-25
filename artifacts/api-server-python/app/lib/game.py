@@ -21,11 +21,29 @@ def era_bounds(era: Optional[str]) -> Optional[Tuple[int, int]]:
     return start, start + 9
 
 
+def _playable(catalog: Catalog) -> List[Tuple[Track, Artist]]:
+    playable = [(t, a) for t, a in catalog if t.preview_url]
+    # Once real (Spotify-imported) tracks exist, the stand-in placeholder audio is left out.
+    if any(t.source == "spotify" for t, _ in playable):
+        playable = [(t, a) for t, a in playable if t.source == "spotify"]
+    return playable
+
+
+def playable_artists(catalog: Catalog) -> List[Tuple[Artist, int]]:
+    """Artists with at least one playable track, with how many, sorted by name."""
+    counts: dict = {}
+    for _, a in _playable(catalog):
+        art, n = counts.get(a.id, (a, 0))
+        counts[a.id] = (art, n + 1)
+    return sorted(counts.values(), key=lambda an: an[0].name.lower())
+
+
 def build_questions(
     catalog: Catalog,
     rounds: int,
     genre: Optional[str] = None,
     era: Optional[str] = None,
+    artist_id: Optional[str] = None,
     rng: Optional[random.Random] = None,
 ) -> List[Tuple[str, List[str]]]:
     """Return [(correct_track_id, option_track_ids)] for each round.
@@ -35,10 +53,7 @@ def build_questions(
     genre so the choices stay plausible.
     """
     rng = rng or random.Random()
-    playable = [(t, a) for t, a in catalog if t.preview_url]
-    # Once real (Spotify-imported) tracks exist, the stand-in placeholder audio is left out.
-    if any(t.source == "spotify" for t, _ in playable):
-        playable = [(t, a) for t, a in playable if t.source == "spotify"]
+    playable = _playable(catalog)
     bounds = era_bounds(era)
     genre_key = genre.strip().lower() if genre and genre.strip() else None
 
@@ -46,6 +61,7 @@ def build_questions(
         (t, a) for t, a in playable
         if (genre_key is None or t.genre.lower() == genre_key)
         and (bounds is None or bounds[0] <= t.release_year <= bounds[1])
+        and (not artist_id or a.id == artist_id)
     ]
     if not pool:
         raise GameSetupError("No playable tracks match those filters")
@@ -61,11 +77,23 @@ def build_questions(
 
     questions: List[Tuple[str, List[str]]] = []
     for correct, correct_artist in order:
+        options = [correct]
+        if artist_id:
+            # One-artist quiz: every choice is a song by that artist (distinct titles), so the
+            # artist name gives nothing away. Top up with similar artists if they have few songs.
+            seen_titles = {correct.title.lower()}
+            own = [t for t, a in playable if a.id == artist_id and t.id != correct.id]
+            rng.shuffle(own)
+            for t in own:
+                if len(options) == 4:
+                    break
+                if t.title.lower() not in seen_titles:
+                    options.append(t)
+                    seen_titles.add(t.title.lower())
         others = [(t, a) for t, a in playable if a.id != correct_artist.id]
         rng.shuffle(others)
         others.sort(key=lambda ta: ta[0].genre != correct.genre)  # same genre first (stable)
-        options = [correct]
-        used_artists = {correct_artist.id}
+        used_artists = {correct_artist.id} if not artist_id else set()
         for t, a in others:
             if len(options) == 4:
                 break
