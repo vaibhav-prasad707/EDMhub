@@ -14,6 +14,8 @@ tags:
     description: Accounts and sessions
   - name: spotify
     description: Connecting a Spotify account for full-track playback
+  - name: library
+    description: Playlists and catalog search
   - name: artists
     description: EDM artist discovery and favorites
   - name: game
@@ -170,6 +172,156 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Genre"
+  /search:
+    get:
+      operationId: searchCatalog
+      tags: [library]
+      summary: Search artists and songs
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 6
+      responses:
+        "401":
+          description: Not signed in
+        "200":
+          description: Matching artists and songs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+  /playlists:
+    get:
+      operationId: listPlaylists
+      tags: [library]
+      summary: The signed-in user's playlists
+      responses:
+        "200":
+          description: Playlists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaylistSummary"
+    post:
+      operationId: createPlaylist
+      tags: [library]
+      summary: Create a playlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaylistInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistSummary"
+  /playlists/{playlistId}:
+    parameters:
+      - name: playlistId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getPlaylist
+      tags: [library]
+      summary: A playlist with its songs
+      responses:
+        "404":
+          description: Not found
+        "200":
+          description: Playlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistDetail"
+    patch:
+      operationId: renamePlaylist
+      tags: [library]
+      summary: Rename a playlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaylistInput"
+      responses:
+        "200":
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistSummary"
+    delete:
+      operationId: deletePlaylist
+      tags: [library]
+      summary: Delete a playlist
+      responses:
+        "204":
+          description: Deleted
+  /playlists/{playlistId}/tracks:
+    post:
+      operationId: addPlaylistTrack
+      tags: [library]
+      summary: Add a song to a playlist
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaylistTrackInput"
+      responses:
+        "200":
+          description: Updated playlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistDetail"
+  /playlists/{playlistId}/tracks/{trackId}:
+    delete:
+      operationId: removePlaylistTrack
+      tags: [library]
+      summary: Remove a song from a playlist
+      parameters:
+        - name: playlistId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trackId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated playlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaylistDetail"
   /game/artists:
     get:
       operationId: listGameArtists
@@ -554,6 +706,68 @@ components:
           type: ["string", "null"]
         artistId:
           type: ["string", "null"]
+    PlaylistSummary:
+      type: object
+      required: [id, name, trackCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        trackCount:
+          type: integer
+    PlaylistDetail:
+      type: object
+      required: [id, name, tracks]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Track"
+    PlaylistInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+    PlaylistTrackInput:
+      type: object
+      required: [trackId]
+      properties:
+        trackId:
+          type: string
+    SearchArtist:
+      type: object
+      required: [id, name, imageUrl, genres]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        imageUrl:
+          type: string
+        genres:
+          type: array
+          items:
+            type: string
+    SearchResults:
+      type: object
+      required: [artists, tracks]
+      properties:
+        artists:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchArtist"
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Track"
     GameArtist:
       type: object
       required: [id, name, trackCount]

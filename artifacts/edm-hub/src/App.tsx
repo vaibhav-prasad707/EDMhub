@@ -14,6 +14,9 @@ import {
   getListActivityQueryKey,
   getListGameArtistsQueryKey,
   getListGenresQueryKey,
+  getListPlaylistsQueryKey,
+  getGetPlaylistQueryKey,
+  getSearchCatalogQueryKey,
   GameStartInputDifficulty,
   GameStartInputRounds,
   useAnswerGameQuestion,
@@ -31,6 +34,14 @@ import {
   useListArtists,
   useListGameArtists,
   useListGenres,
+  useListPlaylists,
+  useGetPlaylist,
+  useCreatePlaylist,
+  useRenamePlaylist,
+  useDeletePlaylist,
+  useAddPlaylistTrack,
+  useRemovePlaylistTrack,
+  useSearchCatalog,
   useStartGame,
   useToggleArtistFavorite,
   type Artist,
@@ -55,9 +66,12 @@ import {
   Menu,
   Music2,
   Pause,
+  Pencil,
   Play,
+  Plus,
   Search,
   Sparkles,
+  Trash2,
   Trophy,
   UserRound,
   X,
@@ -308,13 +322,233 @@ function LeaderboardRow({ entry, index }: { entry: LeaderboardEntry; index: numb
   return <div className={`grid grid-cols-[70px_1fr_120px_100px] items-center border-b border-foreground/20 px-4 py-4 ${entry.isCurrentUser ? 'bg-primary' : ''}`} data-testid={`row-leaderboard-${index}`}><span className="display text-3xl">{entry.rank < 4 ? ['01', '02', '03'][entry.rank - 1] : entry.rank}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center border-2 border-foreground text-xs font-bold" style={{ background: entry.accent }}>{entry.initials}</span><div><strong className="block">{entry.username}{entry.isCurrentUser && <span className="ml-2 text-[10px]">YOU</span>}</strong><span className="zine-label text-muted-foreground">{entry.games} sessions</span></div></div><strong>{entry.score.toLocaleString()}</strong><span className="text-sm font-bold">{entry.accuracy}%</span></div>;
 }
 
+function useDebounced<T>(value: T, ms = 250): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => { const id = setTimeout(() => setDebounced(value), ms); return () => clearTimeout(id); }, [value, ms]);
+  return debounced;
+}
+
+function SongRow({ track, queue, inPlaylist, canAdd, adding, onAdd }: { track: Track; queue?: Track[]; inPlaylist: boolean; canAdd: boolean; adding: boolean; onAdd: (track: Track) => void }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2" data-testid={`row-song-${track.id}`}>
+      <div className="h-9 w-9 shrink-0 border-2 border-foreground" style={{ background: track.color }} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold">{track.title}</p>
+        <p className="truncate text-xs text-muted-foreground">{track.artistName}</p>
+      </div>
+      <TrackPlayButton track={track} queue={queue} className="h-8 w-8" size={14} />
+      <button type="button" onClick={() => onAdd(track)} disabled={!canAdd || inPlaylist || adding} className="ink-border flex h-8 shrink-0 items-center gap-1 bg-background px-2 text-xs font-bold hover:bg-primary disabled:cursor-default disabled:opacity-60" title={canAdd ? undefined : 'Create or pick a playlist first'} data-testid={`button-add-song-${track.id}`}>
+        {inPlaylist ? 'ADDED' : <><Plus size={14} /> ADD</>}
+      </button>
+    </div>
+  );
+}
+
+function ArtistSongs({ artistId, onBack, inPlaylist, canAdd, adding, onAdd }: { artistId: string; onBack: () => void; inPlaylist: Set<string>; canAdd: boolean; adding: boolean; onAdd: (track: Track) => void }) {
+  const { data, isLoading, isError } = useGetArtist(artistId, { query: { queryKey: getGetArtistQueryKey(artistId) } });
+  return (
+    <div>
+      <button type="button" onClick={onBack} className="zine-label flex w-full items-center gap-2 border-b-2 border-foreground px-3 py-2 text-left hover:bg-primary" data-testid="button-search-back">← BACK TO RESULTS</button>
+      {isLoading && <p className="p-4 text-sm text-muted-foreground">Loading songs...</p>}
+      {isError && <p className="p-4 text-sm">Couldn’t load this artist.</p>}
+      {data && <>
+        <p className="px-3 pt-3 text-sm font-bold">{data.name} <span className="font-normal text-muted-foreground">· {data.topTracks.length} songs</span></p>
+        <div className="divide-y divide-foreground/15">
+          {data.topTracks.map(t => <SongRow key={t.id} track={t} queue={data.topTracks} inPlaylist={inPlaylist.has(t.id)} canAdd={canAdd} adding={adding} onAdd={onAdd} />)}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+function CatalogSearch({ inPlaylist, canAdd, adding, onAdd }: { inPlaylist: Set<string>; canAdd: boolean; adding: boolean; onAdd: (track: Track) => void }) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const [artistId, setArtistId] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const q = useDebounced(text.trim());
+  const results = useSearchCatalog({ q, limit: 8 }, { query: { queryKey: getSearchCatalogQueryKey({ q, limit: 8 }), enabled: q.length > 0 } });
+  useEffect(() => {
+    const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, []);
+  const data = results.data;
+  const empty = q.length > 0 && !results.isFetching && data && !data.artists.length && !data.tracks.length;
+  return (
+    <div ref={box} className="relative">
+      <label className="ink-border flex items-center gap-3 bg-card px-4 py-3">
+        <Search size={18} />
+        <input value={text} onChange={e => { setText(e.target.value); setOpen(true); setArtistId(null); }} onFocus={() => setOpen(true)} onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }} placeholder="Search any artist or song..." className="w-full bg-transparent text-sm font-bold outline-none" maxLength={100} data-testid="input-library-search" aria-label="Search any artist or song" />
+        {text && <button type="button" onClick={() => { setText(''); setArtistId(null); }} aria-label="Clear search"><X size={16} /></button>}
+      </label>
+      {open && text.trim() && (
+        <div className="ink-border hard-shadow absolute inset-x-0 top-full z-30 mt-2 max-h-[28rem] overflow-y-auto bg-background" data-testid="dropdown-library-search">
+          {artistId ? (
+            <ArtistSongs artistId={artistId} onBack={() => setArtistId(null)} inPlaylist={inPlaylist} canAdd={canAdd} adding={adding} onAdd={onAdd} />
+          ) : (
+            <>
+              {(results.isFetching || text.trim() !== q) && !data && <p className="p-4 text-sm text-muted-foreground">Searching...</p>}
+              {results.isError && <p className="p-4 text-sm">Search failed. Try again.</p>}
+              {empty && <p className="p-4 text-sm">No artists or songs match “{q}”.</p>}
+              {!!data?.artists.length && <>
+                <p className="zine-label border-b border-foreground/20 px-3 py-2">Artists</p>
+                {data.artists.map(a => (
+                  <button key={a.id} type="button" onClick={() => setArtistId(a.id)} className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-primary" data-testid={`result-artist-${a.id}`}>
+                    <img src={a.imageUrl} alt="" className="h-9 w-9 border-2 border-foreground object-cover" />
+                    <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{a.name}</strong><span className="block truncate text-xs text-muted-foreground">{a.genres.join(' · ')}</span></span>
+                    <span className="zine-label flex items-center gap-1">SONGS <ChevronRight size={14} /></span>
+                  </button>
+                ))}
+              </>}
+              {!!data?.tracks.length && <>
+                <p className="zine-label border-y border-foreground/20 px-3 py-2">Songs</p>
+                <div className="divide-y divide-foreground/15">
+                  {data.tracks.map(t => <SongRow key={t.id} track={t} inPlaylist={inPlaylist.has(t.id)} canAdd={canAdd} adding={adding} onAdd={onAdd} />)}
+                </div>
+              </>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlaylistPanel({ playlistId, onDeleted }: { playlistId: string; onDeleted: () => void }) {
+  const qc = useQueryClient();
+  const detail = useGetPlaylist(playlistId, { query: { queryKey: getGetPlaylistQueryKey(playlistId) } });
+  const rename = useRenamePlaylist();
+  const remove = useDeletePlaylist();
+  const removeTrack = useRemovePlaylistTrack();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const refresh = () => { qc.invalidateQueries({ queryKey: getGetPlaylistQueryKey(playlistId) }); qc.invalidateQueries({ queryKey: getListPlaylistsQueryKey() }); };
+  const save = () => {
+    const next = name.trim();
+    if (!next || next === detail.data?.name) { setEditing(false); return; }
+    rename.mutate({ playlistId, data: { name: next } }, { onSuccess: () => { setEditing(false); refresh(); }, onError: () => toast({ title: 'Could not rename the playlist' }) });
+  };
+  const del = () => {
+    if (!window.confirm(`Delete “${detail.data?.name}”? This can’t be undone.`)) return;
+    remove.mutate({ playlistId }, { onSuccess: () => { qc.removeQueries({ queryKey: getGetPlaylistQueryKey(playlistId) }); qc.invalidateQueries({ queryKey: getListPlaylistsQueryKey() }); onDeleted(); }, onError: () => toast({ title: 'Could not delete the playlist' }) });
+  };
+  if (detail.isLoading) return <LoadingBlock label="Opening the crate..." />;
+  if (detail.isError || !detail.data) return <QueryError onRetry={() => detail.refetch()} />;
+  const pl = detail.data;
+  return (
+    <section className="ink-border hard-shadow bg-card p-5 md:p-7" data-testid="panel-playlist">
+      <div className="flex flex-wrap items-center gap-3">
+        {editing ? (
+          <form onSubmit={e => { e.preventDefault(); save(); }} className="flex flex-1 gap-2">
+            <input autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={60} className="ink-border min-w-0 flex-1 bg-background px-3 py-2 font-bold" aria-label="Playlist name" data-testid="input-rename-playlist" />
+            <button type="submit" className="ink-border bg-primary px-3 text-xs font-bold">SAVE</button>
+            <button type="button" onClick={() => setEditing(false)} className="ink-border bg-background px-3 text-xs font-bold">CANCEL</button>
+          </form>
+        ) : (
+          <>
+            <h2 className="display min-w-0 flex-1 truncate text-4xl" data-testid="text-playlist-name">{pl.name}</h2>
+            <button type="button" onClick={() => { setName(pl.name); setEditing(true); }} className="ink-border flex items-center gap-1 bg-background px-3 py-2 text-xs font-bold hover:bg-primary" data-testid="button-rename-playlist"><Pencil size={14} /> RENAME</button>
+            <button type="button" onClick={del} className="ink-border flex items-center gap-1 bg-background px-3 py-2 text-xs font-bold hover:bg-[#ff793f]" data-testid="button-delete-playlist"><Trash2 size={14} /> DELETE</button>
+          </>
+        )}
+      </div>
+      <p className="zine-label mt-3">{pl.tracks.length} {pl.tracks.length === 1 ? 'song' : 'songs'}</p>
+      {pl.tracks.length ? (
+        <div className="mt-5 divide-y-2 divide-foreground border-y-2 border-foreground">
+          {pl.tracks.map((t, i) => (
+            <div key={t.id} className="flex items-center gap-3 py-3" data-testid={`row-playlist-track-${t.id}`}>
+              <span className="zine-label w-7">{String(i + 1).padStart(2, '0')}</span>
+              <div className="h-10 w-10 shrink-0 border-2 border-foreground" style={{ background: t.color }} />
+              <div className="min-w-0 flex-1"><p className="truncate font-bold">{t.title}</p><p className="truncate text-xs text-muted-foreground">{t.artistName} · {t.genre} · {t.duration}</p></div>
+              <TrackPlayButton track={t} queue={pl.tracks} className="h-9 w-9" size={15} />
+              <button type="button" onClick={() => removeTrack.mutate({ playlistId, trackId: t.id }, { onSuccess: refresh, onError: () => toast({ title: 'Could not remove that song' }) })} disabled={removeTrack.isPending} className="grid h-9 w-9 shrink-0 place-items-center border-2 border-foreground bg-background hover:bg-[#ff793f]" aria-label={`Remove ${t.title}`} data-testid={`button-remove-track-${t.id}`}><X size={15} /></button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5"><EmptyState title="No songs yet." detail="Search for an artist or a song above and hit ADD to put it in this playlist." /></div>
+      )}
+    </section>
+  );
+}
+
 function Library() {
+  const qc = useQueryClient();
   const dash = useGetDashboard({ query: { queryKey: getGetDashboardQueryKey() } });
-  const [drawer, setDrawer] = useState<string | null>(null);
+  const playlists = useListPlaylists({ query: { queryKey: getListPlaylistsQueryKey() } });
+  const create = useCreatePlaylist();
+  const addTrack = useAddPlaylistTrack();
   const favorite = useToggleArtistFavorite();
-  const queryClient = useQueryClient();
-  const onFavorite = (a: Artist) => favorite.mutate({ artistId: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); } });
-  return <PageFrame eyebrow="The private shelf / saved" title="Your library." intro="The artists and tracks you marked for later, organized like a good record store counter."><div className="mb-7 flex items-center gap-3"><span className="border-2 border-foreground bg-primary px-3 py-2 text-xs font-bold">ARTISTS {dash.data?.favoriteArtists?.length || 0}</span><span className="border-2 border-foreground bg-card px-3 py-2 text-xs font-bold">TRACKS / VIA ARTISTS</span></div>{dash.isLoading ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><LoadingBlock /><LoadingBlock /><LoadingBlock /><LoadingBlock /></div> : dash.isError ? <QueryError onRetry={() => dash.refetch()} /> : dash.data?.favoriteArtists?.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{dash.data.favoriteArtists.map(a => <ArtistCard key={a.id} artist={a} onFavorite={onFavorite} onOpen={a => setDrawer(a.id)} />)}</div> : <EmptyState title="Your shelf is empty." detail="Favorite an artist while you’re digging through Discover. We’ll keep the lights on." />}{drawer && <ArtistDrawer artistId={drawer} onClose={() => setDrawer(null)} />}</PageFrame>;
+  const [tab, setTab] = useState<'playlists' | 'artists'>('playlists');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [drawer, setDrawer] = useState<string | null>(null);
+  const list = playlists.data ?? [];
+  const activeId = selected && list.some(p => p.id === selected) ? selected : list[0]?.id ?? null;
+  const active = useGetPlaylist(activeId ?? '', { query: { queryKey: getGetPlaylistQueryKey(activeId ?? ''), enabled: !!activeId } });
+  const inPlaylist = useMemo(() => new Set((active.data?.tracks ?? []).map(t => t.id)), [active.data]);
+  const onCreate = (e: FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name || create.isPending) return;
+    create.mutate({ data: { name } }, { onSuccess: p => { setNewName(''); setSelected(p.id); setTab('playlists'); qc.invalidateQueries({ queryKey: getListPlaylistsQueryKey() }); }, onError: () => toast({ title: 'Could not create the playlist' }) });
+  };
+  const onAdd = (track: Track) => {
+    if (!activeId) return;
+    addTrack.mutate({ playlistId: activeId, data: { trackId: track.id } }, {
+      onSuccess: () => { qc.invalidateQueries({ queryKey: getGetPlaylistQueryKey(activeId) }); qc.invalidateQueries({ queryKey: getListPlaylistsQueryKey() }); toast({ title: `Added “${track.title}”`, description: `to ${list.find(p => p.id === activeId)?.name ?? 'your playlist'}` }); },
+      onError: () => toast({ title: 'Could not add that song' }),
+    });
+  };
+  const onFavorite = (a: Artist) => favorite.mutate({ artistId: a.id }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); } });
+  const favs = dash.data?.favoriteArtists ?? [];
+  return (
+    <PageFrame eyebrow="The private shelf / saved" title="Your library." intro="Build playlists, search the whole catalog, and keep the artists you love close.">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <span className="zine-label">Adding to:</span>
+        <select value={activeId ?? ''} onChange={e => { setSelected(e.target.value); setTab('playlists'); }} disabled={!list.length} className="ink-border bg-background px-3 py-2 text-sm font-bold" aria-label="Playlist to add songs to" data-testid="select-target-playlist">
+          {!list.length && <option value="">No playlists yet</option>}
+          {list.map(p => <option key={p.id} value={p.id}>{p.name} ({p.trackCount})</option>)}
+        </select>
+      </div>
+      <div className="mb-8"><CatalogSearch inPlaylist={inPlaylist} canAdd={!!activeId} adding={addTrack.isPending} onAdd={onAdd} /></div>
+      <div className="mb-7 flex items-center gap-3">
+        <button type="button" onClick={() => setTab('playlists')} className={`border-2 border-foreground px-3 py-2 text-xs font-bold ${tab === 'playlists' ? 'bg-primary' : 'bg-card'}`} data-testid="tab-playlists">PLAYLISTS {list.length}</button>
+        <button type="button" onClick={() => setTab('artists')} className={`border-2 border-foreground px-3 py-2 text-xs font-bold ${tab === 'artists' ? 'bg-primary' : 'bg-card'}`} data-testid="tab-artists">FAVORITE ARTISTS {favs.length}</button>
+      </div>
+      {tab === 'playlists' ? (
+        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+          <aside className="space-y-4">
+            <form onSubmit={onCreate} className="ink-border bg-card p-4">
+              <label className="zine-label block" htmlFor="new-playlist">New playlist</label>
+              <div className="mt-3 flex gap-2">
+                <input id="new-playlist" value={newName} onChange={e => setNewName(e.target.value)} maxLength={60} placeholder="Name it..." className="ink-border min-w-0 flex-1 bg-background px-3 py-2 text-sm font-bold" data-testid="input-new-playlist" />
+                <button type="submit" disabled={!newName.trim() || create.isPending} className="ink-border flex items-center gap-1 bg-primary px-3 text-xs font-bold disabled:opacity-50" data-testid="button-create-playlist"><Plus size={14} /> CREATE</button>
+              </div>
+            </form>
+            {playlists.isLoading ? <LoadingBlock /> : playlists.isError ? <QueryError onRetry={() => playlists.refetch()} /> : (
+              <div className="space-y-2">
+                {list.map(p => (
+                  <button key={p.id} type="button" onClick={() => setSelected(p.id)} className={`ink-border flex w-full items-center gap-3 p-3 text-left hover:bg-primary ${p.id === activeId ? 'bg-primary' : 'bg-card'}`} data-testid={`button-select-playlist-${p.id}`}>
+                    <ListMusic size={18} /><span className="min-w-0 flex-1 truncate font-bold">{p.name}</span><span className="zine-label">{p.trackCount}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+          <div>
+            {activeId ? <PlaylistPanel key={activeId} playlistId={activeId} onDeleted={() => setSelected(null)} /> : !playlists.isLoading && <EmptyState title="Start your first playlist." detail="Name a playlist on the left, then search for any artist or song and add it." />}
+          </div>
+        </div>
+      ) : dash.isLoading ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><LoadingBlock /><LoadingBlock /><LoadingBlock /><LoadingBlock /></div>
+      ) : dash.isError ? <QueryError onRetry={() => dash.refetch()} /> : favs.length ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{favs.map(a => <ArtistCard key={a.id} artist={a} onFavorite={onFavorite} onOpen={a => setDrawer(a.id)} />)}</div>
+      ) : <EmptyState title="Your shelf is empty." detail="Favorite an artist while you’re digging through Discover. We’ll keep the lights on." />}
+      {drawer && <ArtistDrawer artistId={drawer} onClose={() => setDrawer(null)} />}
+    </PageFrame>
+  );
 }
 
 function Profile() {

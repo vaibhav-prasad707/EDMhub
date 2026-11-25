@@ -24,6 +24,9 @@ Daft Punk (+ French House)
 FISHER
 Duke Dumont
 Calvin Harris (+ EDM)
+Martin Garrix (+ Progressive House, EDM)
+Alesso (+ Progressive House, EDM)
+Zedd (+ EDM, Electro House)
 Swedish House Mafia (+ Progressive House)
 David Guetta (+ EDM)
 Eric Prydz (+ Progressive House, Techno)

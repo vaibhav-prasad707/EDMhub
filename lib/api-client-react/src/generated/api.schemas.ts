@@ -124,6 +124,42 @@ export interface GameStartInput {
   artistId?: string | null;
 }
 
+export interface PlaylistSummary {
+  id: string;
+  name: string;
+  trackCount: number;
+}
+
+export interface PlaylistDetail {
+  id: string;
+  name: string;
+  tracks: Track[];
+}
+
+export interface PlaylistInput {
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+}
+
+export interface PlaylistTrackInput {
+  trackId: string;
+}
+
+export interface SearchArtist {
+  id: string;
+  name: string;
+  imageUrl: string;
+  genres: string[];
+}
+
+export interface SearchResults {
+  artists: SearchArtist[];
+  tracks: Track[];
+}
+
 export interface GameArtist {
   id: string;
   name: string;
@@ -261,6 +297,15 @@ export interface Leaderboard {
   currentUserRank: number;
   totalPlayers: number;
 }
+
+export type SearchCatalogParams = {
+q: string;
+/**
+ * @minimum 1
+ * @maximum 20
+ */
+limit?: number;
+};
 
 export type ListArtistsParams = {
 genre?: string;

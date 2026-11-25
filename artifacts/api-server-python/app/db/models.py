@@ -123,3 +123,29 @@ class SpotifyLink(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
     )
+
+
+class Playlist(SQLModel, table=True):
+    __tablename__ = "edm_playlists"
+
+    id: str = Field(primary_key=True)
+    user_id: str = Field(index=True, foreign_key="edm_users.id")
+    name: str
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )
+
+
+class PlaylistTrack(SQLModel, table=True):
+    __tablename__ = "edm_playlist_tracks"
+    __table_args__ = (UniqueConstraint("playlist_id", "track_id", name="uq_playlist_track"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    playlist_id: str = Field(index=True, foreign_key="edm_playlists.id")
+    track_id: str = Field(foreign_key="edm_tracks.id")
+    position: int = Field(default=0)
+    added_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )

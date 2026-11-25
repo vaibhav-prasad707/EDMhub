@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import Session, SQLModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import auth, edm, health, spotify
+from app.api import auth, edm, health, library, spotify
 from app.db.models import Artist, Track
 from app.db.migrate import apply_migrations
 from app.db.session import engine
@@ -61,6 +61,7 @@ async def http_error_handler(_: Request, exc: StarletteHTTPException):
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(edm.router, prefix="/api")
+app.include_router(library.router, prefix="/api")
 app.include_router(spotify.router, prefix="/api")
 
 
