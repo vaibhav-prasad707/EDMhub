@@ -152,6 +152,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (idx >= 0 && queue.length > 1) void start(queue[(idx + 1) % queue.length]);
   }, [start]);
 
+  // `next` changes whenever Spotify becomes ready (it depends on `start`, which depends on `sdkReady`).
+  // The two engine effects below must not re-run for that, or they would tear down the audio element
+  // and the Spotify player mid-song, so they call it through a ref instead.
+  const nextRef = useRef(next);
+  useEffect(() => { nextRef.current = next; }, [next]);
+
   // Preview engine: a plain <audio> element.
   useEffect(() => {
     const audio = new Audio();
@@ -166,7 +172,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       waiting: () => isActive() && setLoading(true),
       timeupdate: () => isActive() && setCurrentTime(audio.currentTime),
       loadedmetadata: () => isActive() && setDuration(Number.isFinite(audio.duration) ? audio.duration : 0),
-      ended: () => { if (!isActive()) return; setPlaying(false); next(); },
+      ended: () => { if (!isActive()) return; setPlaying(false); nextRef.current(); },
       error: () => {
         if (!isActive() || !audio.getAttribute('src')) return;
         setLoading(false);
@@ -180,7 +186,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.pause();
       audio.removeAttribute('src');
     };
-  }, [next]);
+  }, []);
 
   // Spotify engine: the Web Playback SDK, only for users who linked an account.
   useEffect(() => {
@@ -200,6 +206,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       player.addListener('initialization_error', fail('This browser cannot play Spotify tracks'));
       player.addListener('authentication_error', fail('Spotify login failed, reconnect'));
       player.addListener('account_error', fail('Spotify Premium is required for full tracks'));
+      player.addListener('playback_error', () => {
+        // Spotify accepted the request but could not play this track (region, licensing, ...).
+        const t = currentRef.current;
+        if (t && startPreview(t)) setError('Spotify could not play this track, playing a preview');
+        else setError('Spotify could not play this track');
+      });
       player.addListener('player_state_changed', (state: SpotifyPlayerState | null) => {
         if (!state || engineRef.current !== 'spotify') return;
         spotifyClock.current = { position: state.position, at: Date.now(), paused: state.paused };
@@ -211,7 +223,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const uri = currentRef.current?.spotifyUri;
         if (state.paused && state.position === 0 && uri && state.track_window.previous_tracks.some(t => t.uri === uri) && !endedHandled.current) {
           endedHandled.current = true;
-          next();
+          nextRef.current();
         }
       });
       spotifyRef.current = player;
@@ -224,7 +236,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       deviceRef.current = null;
       setSdkReady(false);
     };
-  }, [connected, next]);
+  }, [connected, startPreview]);
 
   // The SDK only reports state on changes, so advance the progress bar locally while playing.
   useEffect(() => {
