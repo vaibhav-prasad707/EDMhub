@@ -1,832 +1,115 @@
-# EDM Hub 
+# EDM Hub
 
-**EDM Hub is a neon-brutalist discovery playground for electronic dance music fans. Dig through emerging and iconic artists, test your track knowledge in fast-paced guessing games, save your favorites, and build a personal profile of the sounds that keep you moving.**
+**A neon-brutalist discovery playground for electronic dance music fans. Dig through artists, play a song-guessing game, build playlists, and track your stats.**
 
-The project is a full-stack application with a React/Vite frontend (TypeScript), a FastAPI (Python) backend, PostgreSQL persistence, and generated OpenAPI client types. 
+React + Vite frontend, FastAPI backend, PostgreSQL, and a generated OpenAPI client.
 
 <img width="1526" height="787" alt="Screenshot 2026-09-06 at 16 05 23" src="https://github.com/user-attachments/assets/dee8d8ff-da24-4b6a-9b6e-f712100da3c7" />
 
-
 ## Features
 
-- Artist discovery with search, genre filters, recommendations, and artist details
-- Favorite artists and a personal library
-- Song-guessing game: random 12-second audio clips from the track database, four different-artist options, genre/era filters, difficulty levels, hints, streaks, server-timed speed bonuses, and scoring. Answers are kept server-side and never sent to the browser.
-- Dashboard with listening-game stats, genre breakdowns, achievements, and recent activity
-- Email/password accounts with sign up, sign in, and sign out (argon2 password hashes, signed httpOnly session cookie)
-- Profile and all-time leaderboard views
-- Persistent favorites, game sessions, and game rounds
-- Fluorescent editorial/zine-inspired visual system
-- Same-origin local API proxy for normal desktop development
+- **Discover:** search artists, filter by genre, get recommendations, favorite artists.
+- **Guess the Track:** 5, 10 or 20 rounds of 12-second clips with four choices. Filter by genre, era or a single artist. Hints, streaks, speed bonuses, and a scorecard at the end. Answers stay on the server.
+- **My Library:** create playlists, search any artist or song from a dropdown, add songs, and play them as a queue.
+- **Accounts:** sign up with a username, email and password, then sign in with your username and password.
+- **Dashboard, profile and leaderboard.**
 
-## Music data and playback
+## Quick start
 
-The catalog lives in PostgreSQL. A small built-in seed (`app/lib/edm_data.py`) gives the app something to show on first run; the real catalog comes from Spotify:
+You need Node 24, pnpm 10, Python 3.12+ and PostgreSQL 14+.
+
+```bash
+# 1. Install
+pnpm install
+python3 -m venv artifacts/api-server-python/.venv
+artifacts/api-server-python/.venv/bin/pip install -r artifacts/api-server-python/requirements.txt
+
+# 2. Database
+createdb edm_hub
+
+# 3. Configure the API
+cp artifacts/api-server-python/.env.example artifacts/api-server-python/.env
+# Edit .env: set DATABASE_URL and JWT_SECRET (32+ characters)
+
+# 4. Run the API (terminal 1)
+cd artifacts/api-server-python
+PORT=8080 .venv/bin/python -m app.main
+
+# 5. Run the frontend (terminal 2, from the repo root)
+PORT=18796 BASE_PATH=/ pnpm --filter @workspace/edm-hub run dev
+```
+
+Open **http://127.0.0.1:18796**. The dev server proxies `/api` to the API on port 8080. Tables are created automatically on startup.
+
+On Windows PowerShell, set variables with `$env:PORT="8080"` instead of `PORT=8080`.
+
+## Getting songs
+
+A small built-in seed lets the app run on first start. The real catalog comes from Spotify:
 
 ```bash
 cd artifacts/api-server-python
-python -m app.scripts.sync_spotify            # import every curated artist (about an hour the first time)
-python -m app.scripts.sync_spotify --genre Techno --per-artist 4
-python -m app.scripts.sync_spotify --refresh  # also re-fetch artists that were already imported
+.venv/bin/python -m app.scripts.sync_spotify                  # import every curated artist (slow the first time)
+.venv/bin/python -m app.scripts.sync_spotify --genre Techno   # one genre
+.venv/bin/python -m app.scripts.sync_spotify --refresh        # re-fetch artists already imported
 ```
 
-- The artist list is `app/lib/curated_artists.py`, written as one section per primary genre with `(+ secondary genres)`. An artist listed in several sections is imported once with their genres merged, and the first section they appear in gives their primary genre. Spotify's API (development mode) returns no genres, follower counts or popularity, so genres come from that file and imported artists show "—" followers.
-- Artists are shown in list order with the genres interleaved, so the first page covers every genre.
-- By default the sync skips artists that were already imported (it only refreshes their genres and order), so after editing the list it only downloads the new ones and can be resumed if interrupted.
-- The sync prints names that are shared by several Spotify artists (so the wrong one may have been picked), and artists with no matching preview. Review those lists after a run.
-- Spotify no longer provides audio previews to new apps. The importer fills 30-second clips from the public iTunes Search API, and only accepts a match when both the artist and the title agree. Tracks with no match stay in the catalog but are left out of the guessing game.
-- Re-running the sync is safe (rows are matched by Spotify ID).
-- Spotify credentials stay in the API process (`.env`) and are never sent to the browser.
+- To add an artist, put their exact Spotify name in `app/lib/curated_artists.py` and re-run the sync. It only downloads new artists and is safe to re-run.
+- Spotify no longer provides previews to new apps, so 30-second clips come from the iTunes Search API. Songs with no match stay in the catalog but are left out of the game.
+- Add your Spotify credentials (`SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`) to `.env`. They never reach the browser.
 
-**Playback**
-- Everyone hears the 30-second preview clips. The guessing game always uses these.
-- A user can click **Connect** in the sidebar to link a Spotify account. The player then streams full tracks through the Spotify Web Playback SDK. This needs Spotify **Premium**, and because the app is in Spotify *Development Mode*, only accounts added under *User Management* in the Spotify dashboard (max 5) can use it. Anyone else automatically falls back to previews.
-- In the Spotify dashboard, add this Redirect URI to the app, and open EDM Hub at `http://127.0.0.1:18796` (Spotify does not allow `localhost` for http redirects):
-  `http://127.0.0.1:18796/api/spotify/callback` (override with `SPOTIFY_REDIRECT_URI`).
-- The Web Playback SDK must not be used commercially without Spotify's written approval.
+## Playback
 
-## Tech stack
+- Everyone hears the 30-second previews. The game always uses these.
+- To stream full tracks, click **Connect** in the sidebar to link Spotify. This needs **Spotify Premium**, and while your Spotify app is in Development Mode the account must be added under *User Management* in the Spotify dashboard.
+- In the Spotify dashboard, add the redirect URI `http://127.0.0.1:18796/api/spotify/callback`. Spotify does not allow `localhost`, so open the app at `127.0.0.1`.
 
-- Node.js 24
-- pnpm 10
-- React 19
-- Vite 7
-- Python 3.12+
-- FastAPI + Uvicorn
-- PostgreSQL
-- SQLModel / SQLAlchemy
-- OpenAPI and generated React Query hooks
-- Tailwind CSS 4
-- Framer Motion
+## Environment variables
+
+Set these in `artifacts/api-server-python/.env`.
+
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string, e.g. `postgresql://postgres:pw@localhost:5432/edm_hub` |
+| `JWT_SECRET` | Signs session cookies. Generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `COOKIE_SECURE` | `true` when served over HTTPS (default `false`) |
+| `SPOTIPY_CLIENT_ID` / `SPOTIPY_CLIENT_SECRET` | Spotify app credentials (keep secret) |
+| `SPOTIFY_REDIRECT_URI` | Defaults to `http://127.0.0.1:18796/api/spotify/callback` |
 
 ## Repository layout
 
 ```text
 artifacts/
-  api-server-python/ FastAPI backend
-  edm-hub/          React/Vite web application
-  mockup-sandbox/   Component preview server
-
+  api-server-python/   FastAPI backend (app/api = routes, app/lib = game and catalog logic)
+  edm-hub/             React/Vite frontend
 lib/
-  api-client-react/ Generated React Query API client
-  api-spec/         OpenAPI source specification and code generation
-
-attached_assets/    Supplied design references and project assets
-```
-
-## Requirements
-
-Install the following before starting:
-
-- Node.js 24.x
-- pnpm 10.x
-- Python 3.12 or newer
-- PostgreSQL 14 or newer
-
-Check your versions:
-
-```bash
-node --version
-pnpm --version
-```
-
-## Local setup
-
-### 1. Install dependencies
-
-From the repository root:
-
-```bash
-corepack enable
-corepack prepare pnpm@10.26.1 --activate
-pnpm install
-
-python3 -m venv artifacts/api-server-python/.venv
-source artifacts/api-server-python/.venv/bin/activate
-pip install -r artifacts/api-server-python/requirements.txt
-```
-
-### 2. Create a PostgreSQL database
-
-Create a database named `edm_hub`:
-
-```bash
-createdb edm_hub
-```
-
-If the `createdb` command is unavailable, create the database through `psql` or pgAdmin:
-
-```bash
-psql -U postgres -c "CREATE DATABASE edm_hub;"
-```
-
-Set the connection string in the terminal where the API will run:
-
-```bash
-export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
-```
-
-If your local PostgreSQL server does not require a password, use:
-
-```bash
-export DATABASE_URL="postgresql://postgres@localhost:5432/edm_hub"
-```
-
-### 3. Start the API server
-
-The API creates its tables (`edm_artists`, `edm_tracks`, `edm_favorites`, `edm_game_sessions`, `edm_game_rounds`) and seeds the catalog automatically on startup.
-
-Open one terminal and run:
-
-```bash
-cd artifacts/api-server-python
-source .venv/bin/activate
-export DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
-export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-export PORT=8080
-
-python -m app.main
-```
-
-Keep this terminal open.
-
-Verify the API is running:
-
-```bash
-curl http://localhost:8080/api/healthz
-```
-
-### 4. Start the frontend
-
-Open a second terminal in the repository root:
-
-```bash
-export PORT=18796
-export BASE_PATH=/
-
-pnpm --filter @workspace/edm-hub run dev
-```
-
-Open the application at:
-
-```text
-http://localhost:18796/
-```
-
-The Vite development server forwards `/api` requests to the API at `http://localhost:8080`, so both terminals must remain running.
-
-## Windows PowerShell setup
-
-Use these equivalents instead of `export`:
-
-```powershell
-$env:DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/edm_hub"
-$env:PORT="8080"
-cd artifacts/api-server-python
-python -m app.main
-```
-
-In a second PowerShell window:
-
-```powershell
-$env:PORT="18796"
-$env:BASE_PATH="/"
-pnpm --filter @workspace/edm-hub run dev
+  api-spec/            openapi.yaml (source of truth for the API) and codegen
+  api-client-react/    Generated React Query client
 ```
 
 ## Useful commands
 
-Run the full workspace typecheck:
-
 ```bash
-pnpm run typecheck
-```
-
-Build all packages:
-
-```bash
-pnpm run build
-```
-
-Build the frontend:
-
-```bash
+pnpm run typecheck                                  # typecheck the workspace
+pnpm --filter @workspace/api-spec run codegen       # regenerate the API client after editing openapi.yaml
 PORT=18796 BASE_PATH=/ pnpm --filter @workspace/edm-hub run build
 ```
 
-Regenerate typed API clients after changing the OpenAPI specification:
-
-```bash
-pnpm --filter @workspace/api-spec run codegen
-```
-
-Database tables are created on API startup from `artifacts/api-server-python/app/db/models.py`.
-
-## Environment variables
-
-| Variable | Required by | Description |
-| --- | --- | --- |
-| `DATABASE_URL` | API | PostgreSQL connection string |
-| `SPOTIPY_CLIENT_ID` / `SPOTIPY_CLIENT_SECRET` | API | Spotify app credentials (never commit or expose them) |
-| `SPOTIFY_REDIRECT_URI` | API | Spotify OAuth redirect; default `http://127.0.0.1:18796/api/spotify/callback` |
-| `JWT_SECRET` | API | Secret (32+ chars) used to sign session cookies |
-| `COOKIE_SECURE` | API | `true` when served over HTTPS; defaults to `false` |
-| `CORS_ORIGINS` | API | Optional comma-separated origins; unneeded behind the same-origin proxy |
-| `PORT` | API or frontend | Port for the process being started |
-| `BASE_PATH` | Frontend | Vite base path; use `/` for a normal local install |
-
-Never commit database credentials, API keys, or client secrets. Use your local shell environment, an ignored `.env` file loaded by your own tooling, or your deployment provider’s secret manager.
+When you add or change an API route in `app/api/`, update `lib/api-spec/openapi.yaml` by hand and re-run codegen.
 
 ## Troubleshooting
 
-### Missing `lightningcss.darwin-arm64.node`
+- **`PORT environment variable is required`:** start the frontend with `PORT=18796 BASE_PATH=/`.
+- **`DATABASE_URL` or `JWT_SECRET` errors:** set both in `artifacts/api-server-python/.env`.
+- **Frontend shows request errors:** check the API is running on 8080, the frontend on 18796, and PostgreSQL is up.
+- **`redirect_uri: Not matching configuration` from Spotify:** the URI in the Spotify dashboard must match `SPOTIFY_REDIRECT_URI` exactly.
+- **`lightningcss.darwin-arm64.node` missing:** run `rm -rf node_modules && pnpm install`.
+- **The API doesn't pick up code changes:** it has no auto-reload, so restart it.
 
-This usually means dependencies were installed before the project included macOS ARM optional binaries. From the repository root:
+## Deploying
 
-```bash
-rm -rf node_modules
-pnpm install
-```
-
-Then restart the frontend.
-
-### `PORT environment variable is required`
-
-The Vite configuration requires an explicit port, and the API defaults to 8080:
-
-```bash
-# API
-PORT=8080
-
-# Frontend
-PORT=18796
-BASE_PATH=/
-```
-
-### `DATABASE_URL must be set`
-
-Set `DATABASE_URL` in the same terminal that starts the API server. Environment variables set in one terminal are not automatically available in another terminal.
-
-### `createdb: command not found`
-
-Install PostgreSQL command-line tools or create the database using pgAdmin. The application only needs a valid PostgreSQL connection string.
-
-### The API starts but the frontend shows request errors
-
-Confirm that:
-
-1. The API is running on port `8080`.
-2. The frontend is running on port `18796`.
-3. The frontend was started with `BASE_PATH=/`.
-4. PostgreSQL is running and `DATABASE_URL` points to the correct database.
-
-## Architecture notes
-
-- `lib/api-spec/openapi.yaml` is the source of truth for API contracts.
-- Generated API hooks should be regenerated after OpenAPI changes. The FastAPI routes in `app/api/edm.py` must be kept in sync with the spec by hand.
-- Accounts live in `edm_users`; favorites and game sessions are keyed by the signed-in user's id. Browsing endpoints are public, everything user-specific requires a session.
-- The current product catalog is seeded data; PostgreSQL persists user-facing game and favorite state.
-- Spotify credentials, when eventually used, must stay in the API process and must never be exposed to the React application.
+Use a managed Postgres (Neon or Supabase) and set its URL as `DATABASE_URL`. Host the API on Render or Railway with root directory `artifacts/api-server-python`, build command `pip install -r requirements.txt`, and start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Host the frontend on Vercel with root `artifacts/edm-hub`, and add a `vercel.json` rewrite that sends `/api/(.*)` to your API URL. Set `COOKIE_SECURE=true` and register your production Spotify redirect URI.
 
 ## License
 
-The project is marked as MIT in the root package metadata.
-
-
-## To do
-
-# EDM Hub: Deployment Guide & Development Roadmap
-
-The UI layout of EDM Hub presents a phenomenal fluorescent editorial/zine aesthetic that is incredibly clean and stands out perfectly for an electronic music platform.
-
-Given your current workspace setup (pnpm monorepo, React 19, Express 5, Drizzle ORM) and feature backlog, this guide provides the exact steps to deploy your partial build today and safely build the remaining features.
-
----
-
-## Table of Contents
-
-- [Part 1: Deploying the Partial Build Today](#part-1-deploying-the-partial-build-today)
-  - [Database Setup](#database-setup)
-  - [Backend API Deployment](#backend-api-deployment)
-  - [Frontend Deployment](#frontend-deployment)
-- [Part 2: Development Roadmap](#part-2-development-roadmap)
-  - [Phase 1: Player Verification](#phase-1-check-if-the-player-works)
-  - [Phase 2: User Login & Authentication](#phase-2-add-user-login--auth)
-  - [Phase 3: Song Guessing Game](#phase-3-build-the-song-guessing-game)
-  - [Phase 4: Spotify Integration](#phase-4-connect-a-real-time-music-api-spotify)
-
----
-
-## Part 1: Deploying the Partial Build Today
-
-Since your project uses a monorepo layout with pnpm workspaces, avoid hosting on a single rigid server. Instead, split deployment across free-tier services and scale efficiently.
-
-### Database Setup
-
-**Platform:** Supabase or Neon
-
-Since you are using PostgreSQL, do not host your own database. Both Supabase and Neon offer free managed Postgres instances.
-
-**Steps:**
-
-1. Sign up for **Supabase** or **Neon**
-2. Copy your production connection string
-3. Add it to your environment variables as `DATABASE_URL`
-4. Tables are created automatically when the API starts, so no separate migration step is needed.
-
-**Key Point:** Use managed database services to eliminate operational overhead and ensure reliability.
-
----
-
-### Backend API Deployment
-
-**Platform:** Render or Railway
-
-Your backend is a FastAPI app. Both Render and Railway handle Python services natively.
-
-**Steps:**
-
-1. Create a web service on Render or Railway
-2. Link your GitHub repository
-3. Configure the build and start commands:
-
-**Root directory:** `artifacts/api-server-python`
-
-**Build Command:**
-
-```bash
-pip install -r requirements.txt
-```
-
-**Start Command:**
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port $PORT
-```
-
-4. Set environment variables in the platform dashboard:
-   - `PORT=8080`
-   - `DATABASE_URL` (your production connection string)
-   - Any other required API environment variables
-
-**Key Point:** Set the service root directory to `artifacts/api-server-python`.
-
----
-
-### Frontend Deployment
-
-**Platform:** Vercel
-
-Vercel is the easiest place to host your React/Vite frontend.
-
-**Steps:**
-
-1. Import your repository into Vercel
-2. Set the **Root Directory** to: `artifacts/edm-hub`
-3. Vercel will automatically detect Vite and configure the build
-4. Set environment variables in the Vercel dashboard:
-   - `PORT=18796`
-   - `BASE_PATH=/`
-5. Configure API proxy to your live backend:
-
-**vercel.json** (in `artifacts/edm-hub/` root):
-
-```json
-{
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://your-render-or-railway-url.com/api/$1"
-    }
-  ]
-}
-```
-
-Replace `https://your-render-or-railway-url.com` with your actual backend URL.
-
-**Key Point:** This proxy configuration keeps your frontend architecture clean and maintains same-origin requests, simplifying CORS configuration.
-
----
-
-## Part 2: Development Roadmap
-
-Do not try to build all remaining features at once. Follow this sequential order to prevent breaking your architectural layout and ensure a stable release cycle.
-
----
-
-## Phase 1: Check if the Player Works
-
-**Objective:** Verify that your local frontend audio player functions correctly with real audio sources.
-
-**Why:** Before integrating Spotify or other complex APIs, ensure the core player functionality works end-to-end.
-
-### Implementation Steps
-
-1. **Locate your seeding data file:**
-
-```
-artifacts/api-server/src/lib/edm-data.ts
-```
-
-2. **Replace audio sources with open-source URLs:**
-
-Find the track entries and update their `audio_source` field with royalty-free MP3 URLs from sources like:
-   - Pixabay Music
-   - Free Music Archive
-   - Other open-source music repositories
-
-Example update:
-
-```typescript
-{
-  id: 1,
-  title: "Track Name",
-  artist: "Artist Name",
-  audio_source: "https://pixabay.com/music/tracks/example-track.mp3",
-  // ... other fields
-}
-```
-
-3. **Test locally:**
-
-- Start your frontend development server
-- Navigate to the dashboard
-- Click "Play" on any track
-- Verify the global player state updates (Night Shift Radio stream component)
-- Confirm audio plays through your speakers
-
-### Success Criteria
-
-- Player UI reflects the currently playing track
-- Audio streams without errors
-- Player controls (play, pause, volume) function correctly
-- State persists across navigation
-
----
-
-## Phase 2: Add User Login & Auth
-
-**Objective:** Replace hardcoded demo user ID with a real database-backed authentication system.
-
-**Why:** Your project currently hardcodes a demo user ID (`demo-dj`). Real user data (favorites, game sessions, etc.) requires proper authentication.
-
-### Implementation Approach
-
-**Do not build crypto password-hashing from scratch.** Use one of these options:
-
-- **Lucia Auth** (lightweight, pairs perfectly with Drizzle ORM)
-- **Clerk** (managed, modern UX, zero backend work)
-- **Auth0** (enterprise-ready, battle-tested)
-
-### Database Schema Updates
-
-**Update Drizzle schema** (`lib/db`) to add a `users` table:
-
-```typescript
-export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  username: varchar('username', { length: 255 }).notNull().unique(),
-  email: varchar('email', { length: 255 }).notNull().unique(),
-  password_hash: varchar('password_hash', { length: 255 }), // if using Lucia
-  created_at: timestamp('created_at').defaultNow(),
-  updated_at: timestamp('updated_at').defaultNow(),
-});
-
-// Update existing tables to reference real user_id
-export const edm_favorites = pgTable('edm_favorites', {
-  id: serial('id').primaryKey(),
-  user_id: integer('user_id').references(() => users.id).notNull(),
-  track_id: integer('track_id').references(() => edm_tracks.id).notNull(),
-  created_at: timestamp('created_at').defaultNow(),
-});
-
-export const edm_game_sessions = pgTable('edm_game_sessions', {
-  id: serial('id').primaryKey(),
-  user_id: integer('user_id').references(() => users.id).notNull(),
-  accuracy: decimal('accuracy'),
-  games_played: integer('games_played').default(0),
-  created_at: timestamp('created_at').defaultNow(),
-});
-```
-
-### API Changes
-
-- Add login/signup endpoints to your Express API
-- Extract `user_id` from the authenticated session
-- Replace hardcoded `demo-dj` references with real user IDs
-- Protect endpoints that modify user data with authentication middleware
-
-### Success Criteria
-
-- Users can create accounts and log in
-- User data (favorites, game sessions) is isolated per user
-- Authentication state persists across sessions
-- Favorites/game data updates correctly for the logged-in user
-
----
-
-## Phase 3: Build the Song Guessing Game
-
-**Objective:** Make the guessing game route fully functional and integrated with your database.
-
-**Why:** Your dashboard already displays stats for "Games Played" and "Accuracy" (showing 86%). Now you need to make these stats meaningful and tied to real gameplay.
-
-### Game Flow
-
-1. Fetch a random track from your Drizzle `edm_tracks` table
-2. Stream a short 10-second snippet through your working player
-3. Present multiple choice options (4 options) or text input powered by existing backend search
-4. Validate the user's answer
-5. Save round results to `edm_game_rounds` table
-
-### Implementation Steps
-
-**1. Create a dedicated route/page:**
-
-```
-artifacts/edm-hub/src/pages/Guess.tsx
-or
-artifacts/edm-hub/src/routes/guess
-```
-
-**2. Backend endpoint for fetching a random track:**
-
-```typescript
-// Express API
-app.get('/api/game/random-track', async (req, res) => {
-  const randomTrack = await db
-    .select()
-    .from(edm_tracks)
-    .orderBy(sql`RANDOM()`)
-    .limit(1);
-  
-  res.json(randomTrack[0]);
-});
-```
-
-**3. Frontend game logic:**
-
-```typescript
-// Fetch random track
-const track = await fetch('/api/game/random-track').then(r => r.json());
-
-// Play 10-second snippet
-player.play(track.audio_source, { duration: 10000 });
-
-// Show 4 multiple-choice options or text input
-// User selects/submits answer
-
-// Validate answer
-const isCorrect = answer === track.title || answer === track.id;
-
-// Save game round
-await fetch('/api/game/rounds', {
-  method: 'POST',
-  body: JSON.stringify({
-    user_id: currentUser.id,
-    track_id: track.id,
-    guess: answer,
-    correct: isCorrect,
-  }),
-});
-
-// Update game stats
-updateGameStats();
-```
-
-**4. Database table for game rounds:**
-
-```typescript
-export const edm_game_rounds = pgTable('edm_game_rounds', {
-  id: serial('id').primaryKey(),
-  user_id: integer('user_id').references(() => users.id).notNull(),
-  track_id: integer('track_id').references(() => edm_tracks.id).notNull(),
-  guess: varchar('guess', { length: 255 }).notNull(),
-  correct: boolean('correct').notNull(),
-  created_at: timestamp('created_at').defaultNow(),
-});
-```
-
-### Success Criteria
-
-- User can start a game round
-- 10-second audio snippet plays correctly
-- Multiple-choice options or search input displays
-- User answer is validated
-- Game stats (Games Played, Accuracy) update in real time
-- Round history is saved to database
-
----
-
-## Phase 4: Connect a Real-Time Music API (Spotify)
-
-**Objective:** Integrate Spotify API to populate your track database with high-quality EDM content.
-
-**Why:** Your current data is seeded locally. Spotify provides a massive, up-to-date catalog of electronic music with rich metadata.
-
-### Critical Security Rule
-
-**Never put Spotify credentials in your frontend code.**
-
-All Spotify integration logic must be completely isolated in your Express API server (`artifacts/api-server/`).
-
-### Implementation Architecture
-
-**1. Register application on Spotify Developer Dashboard:**
-
-- Go to https://developer.spotify.com/dashboard
-- Create a new application
-- Obtain your `Client ID` and `Client Secret`
-- Add these to your backend `.env` file (never in frontend)
-
-**2. Implement Spotify Client Credentials Flow in Express:**
-
-```typescript
-// artifacts/api-server/src/spotify.ts
-import axios from 'axios';
-
-const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/api/token';
-const SPOTIFY_API_URL = 'https://api.spotify.com/v1';
-
-let cachedAccessToken: string | null = null;
-let tokenExpiry: number = 0;
-
-async function getSpotifyAccessToken(): Promise<string> {
-  const now = Date.now();
-  
-  // Return cached token if still valid
-  if (cachedAccessToken && now < tokenExpiry) {
-    return cachedAccessToken;
-  }
-
-  const response = await axios.post(SPOTIFY_AUTH_URL, null, {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    auth: {
-      username: process.env.SPOTIFY_CLIENT_ID!,
-      password: process.env.SPOTIFY_CLIENT_SECRET!,
-    },
-    data: 'grant_type=client_credentials',
-  });
-
-  cachedAccessToken = response.data.access_token;
-  tokenExpiry = now + response.data.expires_in * 1000;
-
-  return cachedAccessToken;
-}
-
-export async function fetchSpotifyTracks(query: string, limit = 20) {
-  const token = await getSpotifyAccessToken();
-
-  const response = await axios.get(
-    `${SPOTIFY_API_URL}/search`,
-    {
-      params: {
-        q: query,
-        type: 'track',
-        limit,
-      },
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
-
-  return response.data.tracks.items;
-}
-```
-
-**3. Create an admin endpoint to sync tracks:**
-
-```typescript
-// artifacts/api-server/src/routes/admin.ts
-app.post('/api/admin/sync-spotify', async (req, res) => {
-  try {
-    // Fetch curated EDM playlists or search results from Spotify
-    const tracks = await fetchSpotifyTracks('electronic music', 100);
-
-    // Transform Spotify metadata to match your Drizzle schema
-    const formatted = tracks.map((track: any) => ({
-      title: track.name,
-      artist: track.artists[0].name,
-      album: track.album.name,
-      duration_ms: track.duration_ms,
-      spotify_id: track.id,
-      audio_preview_url: track.preview_url,
-      cover_art_url: track.album.images[0]?.url,
-      // ... map other fields as needed
-    }));
-
-    // Insert/update tracks in your Postgres database
-    for (const track of formatted) {
-      await db
-        .insert(edm_tracks)
-        .values(track)
-        .onConflictDoUpdate({
-          target: edm_tracks.spotify_id,
-          set: track,
-        });
-    }
-
-    res.json({ synced: formatted.length });
-  } catch (error) {
-    console.error('Spotify sync failed:', error);
-    res.status(500).json({ error: 'Sync failed' });
-  }
-});
-```
-
-**4. Frontend continues reading from your API:**
-
-Your frontend does NOT need to know about Spotify. It simply reads from your own API:
-
-```typescript
-// Frontend code
-const tracks = await fetch('/api/tracks').then(r => r.json());
-// Play from your own database
-player.play(tracks[0].audio_preview_url);
-```
-
-### Security Best Practices
-
-- Store `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` only in backend `.env`
-- Never expose these credentials in API responses or frontend code
-- Use environment variable validation to catch missing credentials at startup
-- Implement rate limiting on the `/api/admin/sync-spotify` endpoint
-- Only allow authenticated admin users to trigger syncs
-
-### Success Criteria
-
-- Spotify tracks are successfully fetched and stored in your database
-- Track metadata (artist, album, duration, etc.) is accurately imported
-- Audio preview URLs are preserved and playable
-- The sync process can be run repeatedly without duplicating tracks
-- Frontend continues to work seamlessly with the new Spotify-sourced data
-
----
-
-## Deployment Checklist
-
-Before deploying each phase, verify:
-
-- [ ] All environment variables are set correctly in the deployment platform
-- [ ] Database migrations have been applied to production
-- [ ] API endpoints are accessible and responding correctly
-- [ ] Frontend can communicate with the backend API
-- [ ] Error handling and logging are in place
-- [ ] Security best practices are followed (especially for Phase 4)
-- [ ] User-facing features have been tested in a staging environment
-
----
-
-## Deployment Sequence Recommended
-
-1. Deploy empty monorepo structure to production (database + API + frontend)
-2. Complete Phase 1 (Player) locally and deploy
-3. Complete Phase 2 (Auth) locally and deploy
-4. Complete Phase 3 (Game) locally and deploy
-5. Complete Phase 4 (Spotify) locally and deploy
-
-This sequential approach ensures each layer is stable before the next is added.
-
----
-
-## Troubleshooting
-
-### Database Connection Issues
-
-**Problem:** `DATABASE_URL` not being recognized in production
-
-**Solution:**
-- Double-check the connection string format (should be `postgresql://...`)
-- Verify the database is accessible from your deployment region
-- Check firewall rules allow connections from your hosting provider
-
-### API Not Reachable from Frontend
-
-**Problem:** Frontend gets CORS errors when calling `/api/...`
-
-**Solution:**
-- Ensure `vercel.json` is properly configured with rewrites
-- Verify the backend URL in rewrites points to your live server
-- Check backend CORS headers if not using rewrites
-
-### Spotify Token Expiration
-
-**Problem:** Spotify API calls fail with 401 Unauthorized
-
-**Solution:**
-- Ensure token caching and refresh logic is implemented correctly
-- Check that `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set in backend environment
-
----
-
-## Additional Resources
-
-- [Render Deployment Guide](https://render.com/docs)
-- [Railway Deployment Guide](https://docs.railway.app)
-- [Vercel Environment Variables](https://vercel.com/docs/concepts/projects/environment-variables)
-- [Spotify Web API Documentation](https://developer.spotify.com/documentation/web-api)
-- [Lucia Auth Documentation](https://lucia-auth.com)
-- [Drizzle ORM Documentation](https://orm.drizzle.team)
+MIT
